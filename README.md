@@ -41,3 +41,6 @@ Development repository for the SCANZ Star Citizen Org Discord Bot.
 - **RSI Verification**: Link Discord accounts to Roberts Space Industries profiles using `/verify` and profile bio checksums.
 - **Message Enforcer**: Slash-command based LFG/LFM/EVENT posts with channel enforcement and automatic role-based pings.
 - **Role Subscriptions**: Interactive button-based system for members to subscribe to specific activity pings.
+  
+  -- write updates
+  
