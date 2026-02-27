@@ -1,0 +1,25 @@
+#!/bin/bash
+# Server-side Deployment Script (/opt/discord-bots/update.sh)
+
+BOT_DIR="/opt/discord-bots/my-bot"
+SERVICE_NAME="discord-bot"
+
+# Branch is passed from the webhook listener, or default to main
+CURRENT_BRANCH=${1:-main}
+
+echo "Starting deployment for branch: $CURRENT_BRANCH"
+cd "$BOT_DIR" || exit 1
+
+# Setup Safe Directory to prevent root/git permission errors in LXC
+git config --global --add safe.directory "$BOT_DIR"
+
+# Hard Reset to match origin branch
+git fetch origin
+git reset --hard origin/$CURRENT_BRANCH
+
+# Application Updates
+./venv/bin/pip install -r requirements.txt
+
+# Service Restart
+sudo systemctl restart "$SERVICE_NAME"
+echo "Deployment complete for branch: $CURRENT_BRANCH"

@@ -1,0 +1,48 @@
+{
+  "ping_roles": {
+    "Event": {
+      "name": "Event Ping",
+      "role_id": 0
+    },
+    "Ping": {
+      "name": "General Ping",
+      "role_id": 0
+    },
+    "Announcement": {
+      "name": "Announcement Ping",
+      "role_id": 0
+    }
+  },
+  "post_types": {
+    "Event": {
+      "name": "Event",
+      "color_hex": "00FF00"
+    },
+    "Ping": {
+      "name": "Ping",
+      "color_hex": "0000FF"
+    },
+    "Announcement": {
+      "name": "Announcement",
+      "color_hex": "FF0000"
+    }
+  },
+  "game_loops": [
+    "General",
+    "Bounties (PvE)",
+    "Mining",
+    "Salvage",
+    "Cargo/Trading",
+    "Medical",
+    "PvP",
+    "Org Event"
+  ],
+  "messages": {
+    "warning_text": "Your message in {channel} was deleted because the channel is strictly formatted.\nPlease use the `/ping` command to submit requests in that channel.",
+    "subscription_title": "Ping Role Subscriptions",
+    "subscription_description": "Click the buttons below to subscribe or unsubscribe from ping roles. When someone uses the `/ping` command, they can choose to ping these roles."
+  },
+  "embeds": {
+    "footer_text": "SCANZ Message Enforcer"
+  }
+}
