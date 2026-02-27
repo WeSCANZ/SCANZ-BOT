@@ -50,16 +50,15 @@ This document lists all available commands for the SCANZ-BOT.
     *   **Usage**: `/scanz_subscriptions`
     *   **Permission**: Admin
 *   **`/ping`**
-    *   **Description**: Creates a formatted alert/ping. Allows dynamically selecting a role to mention.
-    *   **Usage**: `/ping ping_target:@Event game_loop:Org Event description:"QV RUN IN NYX" time:"1:00pm Melbourne" location:"Nyx" requirements:"Armour, Weapons, Meds" channel:#org-events`
+    *   **Description**: Creates a formatted alert/ping. This command automatically pings the `@SCANZ` role.
+    *   **Usage**: `/ping game_loop:"Org Event" description:"QV RUN IN NYX" time:"1:00pm Melbourne" location:"Nyx" requirements:"Armour, Weapons, Meds" channel:#org-events`
     *   **Arguments**:
-        *   `ping_target`: Select any server role to mention for this post.
-        *   `game_loop`: Activity type (from predefined list).
-        *   `description`: Short text description of the group/activity.
-        *   `time` *(Optional)*: When the event takes place.
-        *   `location` *(Optional)*: Where the event takes place.
-        *   `requirements` *(Optional)*: What participants need to bring.
-        *   `link` *(Optional)*: URL or invite link for the event (e.g. Discord Event / Voice channel).
+        *   `game_loop`: Select the type of activity (e.g., Mining, Bounties, Org Event).
+        *   `description`: What are we doing?
+        *   `time` *(Optional)*: When is it happening?
+        *   `location` *(Optional)*: Where is it starting?
+        *   `requirements` *(Optional)*: What should people bring?
+        *   `link` *(Optional)*: Link to a voice channel or event page.
         *   `channel` *(Optional)*: Specifically pick an enforced channel to cross-post to. If left blank, falls back to the database-configured default for "Ping" or the current channel.
     *   **Permission**: Everyone
 

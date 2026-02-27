@@ -69,13 +69,13 @@ class General(commands.Cog):
         embed.add_field(name="`/setup_reaction_role`", value="Admin: Create a reaction role message.", inline=False)
         embed.add_field(name="`/enforce_channel`", value="Admin: Toggle strict message enforcement.", inline=False)
         embed.add_field(name="`/scanz_format`", value="Admin: Setup allowed Post Types/Game Loops for a channel.", inline=False)
-        embed.add_field(name="`/set_post_target`", value="Admin: Map a channel to a specific category for `/post`.", inline=False)
+        embed.add_field(name="`/set_ping_target`", value="Admin: Map a channel to a specific category for `/ping`.", inline=False)
         embed.add_field(name="`/scanz_subscriptions`", value="Admin: Post a persistent message to subscribe to ping roles.", inline=False)
         embed.add_field(name="`/set_verified_role`", value="Admin: Configure the role given to verified members.", inline=False)
         embed.add_field(name="`/grant_verified`", value="Admin: Manually apply roles/nick to a verified user.", inline=False)
         
         # Enforcer Post
-        embed.add_field(name="`/post`", value="Create a formatted Event/Ping/Announcement post. Used in enforced/targeted channels.", inline=False)
+        embed.add_field(name="`/ping`", value="Create a formatted Event/Ping/Announcement post (mentions @SCANZ). Used in enforced/targeted channels.", inline=False)
         
         embed.set_footer(text="To see full argument details, type the command or check our docs.")
         await interaction.response.send_message(embed=embed, ephemeral=True)

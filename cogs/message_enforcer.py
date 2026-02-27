@@ -312,7 +312,6 @@ class MessageEnforcer(commands.Cog):
     async def ping_command(
         self, 
         interaction: discord.Interaction, 
-        ping_target: discord.Role,
         game_loop: app_commands.Choice[str], 
         description: str,
         time: str = None,
@@ -352,37 +351,37 @@ class MessageEnforcer(commands.Cog):
         # Resolve the target channel
         target_channel = await self._resolve_target_channel(interaction, channel)
 
-        # Ping logic
+        # Ping logic - Fixed to @SCANZ role
+        scanz_role = discord.utils.get(interaction.guild.roles, name="SCANZ")
         mention_str = ""
-        role_to_toggle = None
         
-        if ping_target:
-            role_to_toggle = ping_target
-            mention_str = role_to_toggle.mention
+        if scanz_role:
+            mention_str = scanz_role.mention
             
             # Handle mentionability if bot has permissions
-            if not role_to_toggle.mentionable:
+            if not scanz_role.mentionable:
                 try:
-                    await role_to_toggle.edit(mentionable=True, reason=f"Pinging {role_to_toggle.name} role")
+                    await scanz_role.edit(mentionable=True, reason=f"Pinging {scanz_role.name} role via /ping command")
+                    # We'll reset it after sending the message
                 except discord.Forbidden:
                     pass # Bot lacks permission to edit role
+        else:
+            # Revert to a general message or error if the role is missing?
+            # The USER requested it be fixed to @SCANZ, so if it doesn't exist, we should probably warn.
+            await interaction.response.send_message("❌ Error: Could not find the `@SCANZ` role in this server. Please contact an admin.", ephemeral=True)
+            return
         
         # Send the embed to the target channel
         try:
             msg = await target_channel.send(content=mention_str, embed=embed)
             
             # Reset mentionability if we changed it
-            if role_to_toggle and role_to_toggle.mentionable and mention_str != "":
+            if scanz_role and mention_str != "":
                 # Wait a moment for Discord to process the ping
                 await asyncio.sleep(1)
                 try:
-                    # Note: This might cause issues if multiple posts are happening, 
-                    # but usually it's fine for simple use cases. 
-                    # Alternatively, just leave it mentionable if the user prefers.
-                    # We'll stick to simple toggle for now as a "best effort"
-                    # But actually, if it was ALREADY NOT mentionable, we should reset it.
-                    # For now I'll just leave it if it was already mentionable.
-                    pass 
+                    # If we made it mentionable, turn it back off (best effort)
+                    await scanz_role.edit(mentionable=False, reason="Resetting @SCANZ mentionability")
                 except discord.Forbidden:
                     pass
             
