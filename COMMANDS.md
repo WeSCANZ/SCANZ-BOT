@@ -81,6 +81,23 @@ This document lists all available commands for the SCANZ-BOT.
     *   **Arguments**:
         *   `member`: The Discord member to apply the verified role and nickname to.
     *   **Permission**: Admin
+*   **`/manual_verify`** (Slash Command)
+    *   **Description**: Admin command to manually initiate the verification process for a member and an RSI handle. Generates a checksum challenge.
+    *   **Usage**: `/manual_verify member:@SomeUser handle:RSI_Handle`
+    *   **Arguments**:
+        *   `member`: The Discord member to verify.
+        *   `handle`: The RSI handle to link.
+    *   **Permission**: Admin
+*   **`/export_verified`** (Slash Command)
+    *   **Description**: Admin command to export the entire verification database as a CSV file.
+    *   **Usage**: `/export_verified`
+    *   **Permission**: Admin
+*   **`/search_verified`** (Slash Command)
+    *   **Description**: Admin command to search for a verified member by handle, Discord ID, or mention.
+    *   **Usage**: `/search_verified query:Petri`
+    *   **Arguments**:
+        *   `query`: The RSI handle, Discord ID, or mention to search for.
+    *   **Permission**: Admin
 
 ## Roster Monitor (Admin)
 *   **`/roster_audit`** (Slash Command)
@@ -88,6 +105,9 @@ This document lists all available commands for the SCANZ-BOT.
     *   **Permission**: Admin
 *   **`/set_roster_channel`** (Slash Command)
     *   **Description**: Sets the destination for weekly roster audit reports.
+    *   **Permission**: Admin
+*   **`/org_full_sync`** (Slash Command)
+    *   **Description**: Admin command to perform a comprehensive sync between the RSI organization roster and the bot's verification database. Identifies unlinked RSI members.
     *   **Permission**: Admin
 
 ## Suggestion Box
