@@ -26,7 +26,7 @@ Development repository for the SCANZ Star Citizen Org Discord Bot.
     ```
 
 4.  **Configure Environment:**
-    Copy `.env.example` to `.env` and fill in your values:
+    Copy `.env.example` to `.env` and fill in your values (including `DISCORD_TOKEN` and `LOG_CHANNEL_ID`):
     ```bash
     cp .env.example .env
     ```
@@ -41,6 +41,4 @@ Development repository for the SCANZ Star Citizen Org Discord Bot.
 - **RSI Verification**: Link Discord accounts to Roberts Space Industries profiles using `/verify` and profile bio checksums.
 - **Message Enforcer**: Slash-command based LFG/LFM/EVENT posts with channel enforcement and automatic role-based pings.
 - **Role Subscriptions**: Interactive button-based system for members to subscribe to specific activity pings.
-  
-  -- write updates
-  
+- **System Notifications**: Automatic reboot and update alerts sent to a designated log channel, including git branch and commit info.

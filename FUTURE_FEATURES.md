@@ -4,7 +4,7 @@
 **Goal**: Establish a solid foundation for development and deployment.
 - [x] **Migration**: Move the project to the [WeSCANZ](https://github.com/WeSCANZ/SCANZ-BOT) GitHub organization.
 - [/] **Persistence**: Implement database storage (SQLite) for the `ReactionRoles` cog to prevent data loss on bot restart.
-- [ ] **Secret Management**: Audit all files for hardcoded IDs/Tokens and ensure `.env` consistency.
+- [/] **Secret Management**: Audit all files for hardcoded IDs/Tokens and ensure `.env` consistency (Ongoing).
 - [ ] **Message Enforcer**: Strict channel formatting for Ping/LFG channels using slash commands.
 
 ## Phase 2: Core Utility (Q1 2026)
