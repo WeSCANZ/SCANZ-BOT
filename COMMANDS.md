@@ -119,3 +119,8 @@ This document lists all available commands for the SCANZ-BOT.
 *   **`!org`**
     *   **Description**: Displays information and links for SCANZ.
     *   **Usage**: `!org`
+
+## Automated Notifications
+*   **Reboot & Update Alerts**
+    *   **Description**: The bot automatically sends a notification to the designated log channel whenever it reboots or is updated. This message includes the current git branch and the latest commit message for version tracking.
+    *   **Configuration**: Requires `LOG_CHANNEL_ID` in the `.env` file.
