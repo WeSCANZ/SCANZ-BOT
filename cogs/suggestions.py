@@ -30,9 +30,17 @@ class Suggestions(commands.Cog):
                     user_id INTEGER NOT NULL,
                     suggestion_text TEXT NOT NULL,
                     anonymous INTEGER NOT NULL,
-                    timestamp TEXT NOT NULL
+                    timestamp TEXT NOT NULL,
+                    thread_id INTEGER
                 )
             ''')
+            
+            # Migration: Ensure thread_id column exists if table was already created
+            try:
+                cursor.execute('ALTER TABLE suggestions_log ADD COLUMN thread_id INTEGER')
+            except sqlite3.OperationalError:
+                pass # Already exists
+            
             conn.commit()
 
     def _set_config(self, guild_id: int, channel_id: int):
@@ -53,13 +61,13 @@ class Suggestions(commands.Cog):
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def _log_suggestion(self, user_id: int, text: str, anonymous: bool):
+    def _log_suggestion(self, user_id: int, text: str, anonymous: bool, thread_id: int = None):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO suggestions_log (user_id, suggestion_text, anonymous, timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (user_id, text, 1 if anonymous else 0, datetime.now().isoformat()))
+                INSERT INTO suggestions_log (user_id, suggestion_text, anonymous, timestamp, thread_id)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, text, 1 if anonymous else 0, datetime.now().isoformat(), thread_id))
             conn.commit()
 
     @app_commands.command(name="set_suggestion_channel", description="Admin: Set the channel where suggestions will be sent.")
@@ -105,10 +113,66 @@ class Suggestions(commands.Cog):
         embed.set_footer(text=footer_text)
 
         try:
-            await target_channel.send(embed=embed)
-            await interaction.response.send_message("✅ Your suggestion has been submitted successfully!", ephemeral=True)
+            msg = await target_channel.send(embed=embed)
+            
+            # Create a discussion thread
+            thread = await msg.create_thread(
+                name=f"Discussion: {text[:50]}{'...' if len(text) > 50 else ''}",
+                auto_archive_duration=10080 # 7 days
+            )
+            
+            # Log to database with thread ID
+            self._log_suggestion(interaction.user.id, text, anonymous, thread.id)
+            
+            await interaction.response.send_message("✅ Your suggestion has been submitted successfully! A discussion thread has been created.", ephemeral=True)
         except discord.Forbidden:
-            await interaction.response.send_message("❌ I don't have permission to send messages in the suggestion channel.", ephemeral=True)
+            await interaction.response.send_message("❌ I don't have permission to send messages or create threads in the suggestion channel.", ephemeral=True)
+
+    def _find_author_by_thread(self, thread_id: int) -> int:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id FROM suggestions_log WHERE thread_id = ?', (thread_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        # Ignore bot messages
+        if message.author.bot:
+            return
+
+        # Check if the message is in a thread
+        if not isinstance(message.channel, discord.Thread):
+            return
+
+        # Check if the thread belongs to a suggestion
+        author_id = self._find_author_by_thread(message.channel.id)
+        if not author_id:
+            return
+
+        # Don't notify the author of their own replies
+        if message.author.id == author_id:
+            return
+
+        # Notify the original author
+        try:
+            author = await self.bot.fetch_user(author_id)
+            if author:
+                embed = discord.Embed(
+                    title="New Reply to Your Suggestion",
+                    description=f"Someone has replied to the discussion thread for your suggestion in **{message.guild.name}**.",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now()
+                )
+                embed.add_field(name="Reply Content", value=message.content[:1024] or "*[Embed/Image]*", inline=False)
+                embed.add_field(name="Link", value=f"[Click here to view the reply]({message.jump_url})", inline=False)
+                
+                await author.send(embed=embed)
+        except discord.Forbidden:
+            # Author has DMs disabled
+            pass
+        except Exception as e:
+            print(f"Error sending suggestion notification: {e}")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Suggestions(bot))
