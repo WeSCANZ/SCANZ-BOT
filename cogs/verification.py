@@ -13,11 +13,12 @@ from discord.ext import commands
 
 
 class VerifyNowView(discord.ui.View):
-    def __init__(self, cog, handle: str, code: str):
+    def __init__(self, cog, handle: str, code: str, org: str | None = None):
         super().__init__(timeout=None)
         self.cog = cog
         self.handle = handle
         self.code = code
+        self.org = org
 
     @discord.ui.button(label="Verify Now", style=discord.ButtonStyle.success, emoji="✅")
     async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -27,10 +28,14 @@ class VerifyNowView(discord.ui.View):
 
         if success:
             # 1. Update database
+            target_org = self.org
+            # if scraping returned an org and user didn't specify one, use it
+            if not target_org and isinstance(message, dict):
+                target_org = message.get("org")
             self.cog._link_account(
                 interaction.user.id,
                 self.handle,
-                message.get("org", None) if isinstance(message, dict) else None,
+                target_org,
             )
 
             # Fetch the actual Member object from the guild (interaction.user is a User, not a Member)
@@ -48,20 +53,8 @@ class VerifyNowView(discord.ui.View):
                 # except discord.Forbidden:
                 #     print(f"[Verify] Forbidden: Could not set nickname for {member}")
 
-                # 3. Add Verified Role
-                role_id_str = self.cog._get_config("verified_role_id")
-                if role_id_str:
-                    verified_role = interaction.guild.get_role(int(role_id_str))
-                    if verified_role:
-                        try:
-                            await member.add_roles(verified_role)
-                        except discord.Forbidden:
-                            print(
-                                f"[Verify] Forbidden: Could not assign role '{verified_role.name}' "
-                                f"to {member}"
-                            )
-                    else:
-                        print(f"[Verify] Warning: Configured role ID '{role_id_str}' not found in guild.")
+                # 3. Add Verified Role (sync will also remove needs-role if present)
+                await self.cog.sync_member_roles(member)
 
             await interaction.followup.send(
                 f"✅ **Verification Successful!** Your Discord account is now officially linked to the "
@@ -81,19 +74,21 @@ class RSIVerification(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_path = "data/enforcer.db"
+        # in-memory cache of configured org symbols; loaded on demand
+        self._org_cache: list[str] | None = None
         self._setup_db()
 
     def _setup_db(self):
+        """Create or migrate the database schema.
+
+        The `rsi_links` table is rebuilt if necessary so that it contains the
+        composite primary key `(discord_id, org_handle)` and uses the
+        `org_handle` column name consistently.
+        """
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS rsi_links (
-                    discord_id INTEGER PRIMARY KEY,
-                    rsi_handle TEXT NOT NULL,
-                    org TEXT
-                )
-            """)
+            # ensure config table exists
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS rsi_config (
                     key TEXT PRIMARY KEY,
@@ -101,12 +96,42 @@ class RSIVerification(commands.Cog):
                 )
             """)
 
-            # Check if org column exists, add it if not (migration)
+            # examine existing links schema
             cursor.execute("PRAGMA table_info(rsi_links)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if "org" not in columns:
-                cursor.execute("ALTER TABLE rsi_links ADD COLUMN org TEXT")
+            cols = cursor.fetchall()
+            col_names = [c[1] for c in cols]
+            has_org_handle = "org_handle" in col_names
+            has_org = "org" in col_names
 
+            # if table missing or requires migration, rebuild it
+            if not cols or (has_org and not has_org_handle) or (cols and not has_org_handle):
+                # create a new table with desired schema
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS rsi_links_new (
+                        discord_id INTEGER,
+                        rsi_handle TEXT NOT NULL,
+                        org_handle TEXT NOT NULL DEFAULT 'SCANZ',
+                        PRIMARY KEY(discord_id, org_handle)
+                    )
+                """)
+                # copy existing data if any
+                if cols:
+                    # handle both old column names
+                    if has_org_handle:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle) SELECT discord_id, rsi_handle, org_handle FROM rsi_links"
+                        )
+                    elif has_org:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle) SELECT discord_id, rsi_handle, COALESCE(org, 'SCANZ') FROM rsi_links"
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle) SELECT discord_id, rsi_handle, 'SCANZ' FROM rsi_links"
+                        )
+                # drop old table and rename
+                cursor.execute("DROP TABLE IF EXISTS rsi_links")
+                cursor.execute("ALTER TABLE rsi_links_new RENAME TO rsi_links")
             conn.commit()
 
     def _set_config(self, key: str, value: str):
@@ -128,23 +153,79 @@ class RSIVerification(commands.Cog):
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def _is_verified(self, discord_id: int) -> str:
+    # -------------------------------------------------------------
+    # organisation helpers
+    # -------------------------------------------------------------
+    def _get_orgs(self) -> list[str]:
+        """Return the list of configured RSI organisation/affiliate symbols."""
+        if self._org_cache is not None:
+            return self._org_cache
+        val = self._get_config("org_handles")
+        if not val:
+            self._org_cache = []
+        else:
+            self._org_cache = [s.strip().upper() for s in val.split(",") if s.strip()]
+        return self._org_cache
+
+    def _add_org(self, org: str) -> bool:
+        """Add a symbol to the org list. Returns True if added."""
+        org = org.upper()
+        orgs = self._get_orgs()
+        if org in orgs:
+            return False
+        orgs.append(org)
+        self._set_config("org_handles", ",".join(orgs))
+        self._org_cache = orgs
+        return True
+
+    def _remove_org(self, org: str) -> bool:
+        """Remove a symbol from the org list. Returns True if removed."""
+        org = org.upper()
+        orgs = self._get_orgs()
+        if org not in orgs:
+            return False
+        orgs = [o for o in orgs if o != org]
+        self._set_config("org_handles", ",".join(orgs))
+        self._org_cache = orgs
+        return True
+
+    async def org_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplete helper for organisation parameters."""
+        orgs = self._get_orgs()
+        return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
+
+    def _is_verified(self, discord_id: int, org: str = None) -> str:
+        """Return the linked RSI handle for the given discord ID.
+
+        If `org` is provided we restrict to that organisation, otherwise
+        we return the first matching handle regardless of org.
+        """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT rsi_handle FROM rsi_links WHERE discord_id = ?", (discord_id,))
+            if org:
+                cursor.execute(
+                    "SELECT rsi_handle FROM rsi_links WHERE discord_id = ? AND org_handle = ?",
+                    (discord_id, org.upper()),
+                )
+            else:
+                cursor.execute(
+                    "SELECT rsi_handle FROM rsi_links WHERE discord_id = ?",
+                    (discord_id,),
+                )
             row = cursor.fetchone()
             return row[0] if row else None
 
     def _link_account(self, discord_id: int, handle: str, org: str = None):
+        # pick a default org if none supplied
+        if not org:
+            orgs = self._get_orgs()
+            org = orgs[0] if orgs else ""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO rsi_links (discord_id, rsi_handle, org)
+                INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle, org_handle)
                 VALUES (?, ?, ?)
-                ON CONFLICT(discord_id) DO UPDATE SET
-                    rsi_handle=excluded.rsi_handle,
-                    org=excluded.org
             """,
                 (discord_id, handle, org),
             )
@@ -190,25 +271,50 @@ class RSIVerification(commands.Cog):
             except Exception as e:
                 return False, f"Scraping error: {str(e)}"
 
-    def _generate_code(self) -> str:
-        # e.g., SCANZ-A7K9
+    def _generate_code(self, org: str) -> str:
+        # e.g., VER-SCANZ-A7K9 or just "VER-XXXX"; include org for clarity
         suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-        return f"SCANZ-{suffix}"
+        # prefix with org symbol if available
+        return f"{org}-{suffix}" if org else f"VER-{suffix}"
 
     @app_commands.command(name="verify", description="Link your Discord account to your RSI Handle.")
     @app_commands.describe(handle="Your exact Star Citizen RSI Handle")
-    async def verify(self, interaction: discord.Interaction, handle: str):
-        # 1. Check if they are already verified
-        existing_handle = self._is_verified(interaction.user.id)
+    @app_commands.describe(org="The organisation/affiliate you belong to")
+    @app_commands.autocomplete(org="org_autocomplete")
+    async def verify(self, interaction: discord.Interaction, handle: str, org: str = None):
+        # ensure there is at least one configured org
+        orgs = self._get_orgs()
+        if not orgs:
+            await interaction.response.send_message(
+                "❌ No organisations configured. Please ask an administrator to add one.",
+                ephemeral=True,
+            )
+            return
+
+        # choose which org this verification is for
+        if org:
+            if org.upper() not in orgs:
+                await interaction.response.send_message(
+                    f"❌ Unknown organisation `{org}`. Valid choices: {', '.join(orgs)}.",
+                    ephemeral=True,
+                )
+                return
+            chosen_org = org.upper()
+        else:
+            # default to first configured org
+            chosen_org = orgs[0]
+
+        # 1. Check if they are already verified for this org
+        existing_handle = self._is_verified(interaction.user.id, chosen_org)
         if existing_handle:
             await interaction.response.send_message(
-                f"You are already verified and linked to the RSI Handle **{existing_handle}**.",
+                f"You are already verified for {chosen_org} and linked to the RSI Handle **{existing_handle}**.",
                 ephemeral=True,
             )
             return
 
         # 2. Generate a challenge code
-        code = self._generate_code()
+        code = self._generate_code(chosen_org)
 
         # 3. Present the challenge to the user
         embed = discord.Embed(
@@ -226,7 +332,7 @@ class RSIVerification(commands.Cog):
         embed.add_field(name="Your Unique Code", value=f"`{code}`", inline=False)
         embed.set_footer(text="You can remove the code from your bio once verification is successful.")
 
-        view = VerifyNowView(self, handle, code)
+        view = VerifyNowView(self, handle, code, org=chosen_org)
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -246,10 +352,29 @@ class RSIVerification(commands.Cog):
         description="Admin: Manually initiate verification for a specific member.",
     )
     @app_commands.describe(member="The Discord member", handle="The RSI Handle to link")
+    @app_commands.describe(org="Organisation symbol for this manual verification")
     @app_commands.default_permissions(administrator=True)
-    async def manual_verify(self, interaction: discord.Interaction, member: discord.Member, handle: str):
+    @app_commands.autocomplete(org="org_autocomplete")
+    async def manual_verify(
+        self, interaction: discord.Interaction, member: discord.Member, handle: str, org: str = None
+    ):
+        # Determine organisation for manual verification
+        orgs = self._get_orgs()
+        chosen_org = None
+        if org:
+            if org.upper() in orgs:
+                chosen_org = org.upper()
+            else:
+                await interaction.response.send_message(
+                    f"❌ Unknown organisation `{org}`. Valid: {', '.join(orgs)}.",
+                    ephemeral=True,
+                )
+                return
+        else:
+            chosen_org = orgs[0] if orgs else None
+
         # Generate challenge code
-        code = self._generate_code()
+        code = self._generate_code(chosen_org)
 
         embed = discord.Embed(
             title="Manual Verification Initiated",
@@ -265,12 +390,13 @@ class RSIVerification(commands.Cog):
 
         # Reusing VerifyNowView logic but adapted for manual flow
         class ManualVerifyView(discord.ui.View):
-            def __init__(self, cog, target_member, target_handle, target_code):
+            def __init__(self, cog, target_member, target_handle, target_code, target_org=None):
                 super().__init__(timeout=None)
                 self.cog = cog
                 self.member = target_member
                 self.handle = target_handle
                 self.code = target_code
+                self.org = target_org
 
             @discord.ui.button(label="Complete Verification", style=discord.ButtonStyle.success, emoji="✅")
             async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -278,21 +404,17 @@ class RSIVerification(commands.Cog):
                 success, message = await self.cog._scrape_rsi_bio(self.handle, self.code)
 
                 if success:
+                    target_org = self.org
+                    if not target_org and isinstance(message, dict):
+                        target_org = message.get("org")
                     self.cog._link_account(
                         self.member.id,
                         self.handle,
-                        message.get("org", None) if isinstance(message, dict) else None,
+                        target_org,
                     )
 
-                    # Grant role
-                    role_id_str = self.cog._get_config("verified_role_id")
-                    if role_id_str:
-                        role = interaction.guild.get_role(int(role_id_str))
-                        if role:
-                            try:
-                                await self.member.add_roles(role)
-                            except discord.Forbidden:
-                                pass
+                    # sync roles (will add verified role and remove needs-role)
+                    await self.cog.sync_member_roles(self.member)
 
                     await interaction.followup.send(
                         f"✅ Successfully verified and linked {self.member.mention} to `{self.handle}`.",
@@ -302,7 +424,8 @@ class RSIVerification(commands.Cog):
                 else:
                     await interaction.followup.send(f"❌ Verification failed: {message}", ephemeral=True)
 
-        view = ManualVerifyView(self, member, handle, code)
+        # create view with selected organisation and send once
+        view = ManualVerifyView(self, member, handle, code, target_org=chosen_org)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(
@@ -315,7 +438,7 @@ class RSIVerification(commands.Cog):
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT discord_id, rsi_handle FROM rsi_links")
+            cursor.execute("SELECT discord_id, rsi_handle, org_handle FROM rsi_links")
             rows = cursor.fetchall()
 
         if not rows:
@@ -325,13 +448,13 @@ class RSIVerification(commands.Cog):
         # Use in-memory buffer for CSV
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Discord ID", "Discord Name", "RSI Handle"])
+        writer.writerow(["Discord ID", "Discord Name", "RSI Handle", "Org"])
 
-        for discord_id, rsi_handle in rows:
+        for discord_id, rsi_handle, org in rows:
             # Try to resolve member name for readability in CSV
             member = interaction.guild.get_member(discord_id)
             name = f"{member.name}" if member else "Unknown/Left"
-            writer.writerow([discord_id, name, rsi_handle])
+            writer.writerow([discord_id, name, rsi_handle, org])
 
         output.seek(0)
         file = discord.File(io.BytesIO(output.getvalue().encode()), filename="verified_members.csv")
@@ -353,7 +476,7 @@ class RSIVerification(commands.Cog):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT discord_id, rsi_handle FROM rsi_links WHERE rsi_handle LIKE ? OR discord_id = ?",
+                "SELECT discord_id, rsi_handle, org_handle FROM rsi_links WHERE rsi_handle LIKE ? OR discord_id = ?",
                 (f"%{query}%", clean_query if clean_query.isdigit() else 0),
             )
             rows = cursor.fetchall()
@@ -363,10 +486,10 @@ class RSIVerification(commands.Cog):
             return
 
         embed = discord.Embed(title="Verification Search Results", color=discord.Color.blue())
-        for discord_id, rsi_handle in rows[:10]:  # Limit to 10 for sanity
+        for discord_id, rsi_handle, org in rows[:10]:  # Limit to 10 for sanity
             member = interaction.guild.get_member(discord_id)
             mention = member.mention if member else f"ID: {discord_id} (Left Server)"
-            embed.add_field(name=rsi_handle, value=mention, inline=False)
+            embed.add_field(name=f"{rsi_handle} ({org})", value=mention, inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -377,6 +500,7 @@ class RSIVerification(commands.Cog):
     @app_commands.describe(member="The Discord member to grant the verified role to.")
     @app_commands.default_permissions(administrator=True)
     async def grant_verified(self, interaction: discord.Interaction, member: discord.Member):
+        # allow grant to specify org? use any for now
         rsi_handle = self._is_verified(member.id)
         if not rsi_handle:
             await interaction.response.send_message(
@@ -406,6 +530,98 @@ class RSIVerification(commands.Cog):
         await interaction.response.send_message(
             f"**Grant Verified: {member.display_name}** (`{rsi_handle}`)\n" + "\n".join(messages),
             ephemeral=True,
+        )
+
+    # helper to sync a member's roles based on their verification state
+    async def sync_member_roles(self, member: discord.Member) -> None:
+        guild = member.guild
+        scanz_role = guild.get_role(int(self._get_config("scanz_role_id") or 0))
+        ver_role = guild.get_role(int(self._get_config("verified_role_id") or 0))
+        needs_role = guild.get_role(int(self._get_config("needs_role_id") or 0))
+
+        is_verified = bool(self._is_verified(member.id))
+        to_add, to_remove = [], []
+        if is_verified:
+            if ver_role and ver_role not in member.roles:
+                to_add.append(ver_role)
+            if needs_role and needs_role in member.roles:
+                to_remove.append(needs_role)
+        else:
+            if scanz_role and scanz_role in member.roles:
+                if needs_role and needs_role not in member.roles:
+                    to_add.append(needs_role)
+            else:
+                if needs_role and needs_role in member.roles:
+                    to_remove.append(needs_role)
+
+        if to_add:
+            try:
+                await member.add_roles(*to_add, reason="Verification sync")
+            except discord.Forbidden:
+                pass
+        if to_remove:
+            try:
+                await member.remove_roles(*to_remove, reason="Verification sync")
+            except discord.Forbidden:
+                pass
+
+    # configuration commands
+    @app_commands.command(name="add_org", description="Admin: add an RSI organisation/affiliate symbol")
+    @app_commands.describe(symbol="The RSI org symbol, e.g. SCANZ")
+    @app_commands.default_permissions(administrator=True)
+    async def add_org(self, interaction: discord.Interaction, symbol: str):
+        added = self._add_org(symbol)
+        if added:
+            await interaction.response.send_message(
+                f"✅ Added organisation `{symbol.upper()}`.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"ℹ️ `{symbol.upper()}` is already configured.", ephemeral=True
+            )
+
+    @app_commands.command(name="remove_org", description="Admin: remove an RSI organisation/affiliate symbol")
+    @app_commands.describe(symbol="The RSI org symbol to remove")
+    @app_commands.default_permissions(administrator=True)
+    async def remove_org(self, interaction: discord.Interaction, symbol: str):
+        removed = self._remove_org(symbol)
+        if removed:
+            await interaction.response.send_message(
+                f"✅ Removed organisation `{symbol.upper()}`.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"⚠️ `{symbol.upper()}` was not configured.", ephemeral=True
+            )
+
+    @app_commands.command(name="list_orgs", description="List configured RSI organisations/affiliates.")
+    async def list_orgs(self, interaction: discord.Interaction):
+        orgs = self._get_orgs()
+        if orgs:
+            await interaction.response.send_message(
+                "Configured organisations: " + ", ".join(orgs), ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("No organisations have been added yet.", ephemeral=True)
+
+    @app_commands.command(
+        name="set_scanz_role", description="Admin: set the role that identifies SCANZ members."
+    )
+    @app_commands.describe(role="Role that members should have to trigger verification checks")
+    @app_commands.default_permissions(administrator=True)
+    async def set_scanz_role(self, interaction: discord.Interaction, role: discord.Role):
+        self._set_config("scanz_role_id", str(role.id))
+        await interaction.response.send_message(f"✅ SCANZ role set to {role.mention}.", ephemeral=True)
+
+    @app_commands.command(
+        name="set_needs_role", description="Admin: set role applied to users needing verification."
+    )
+    @app_commands.describe(role="Role to apply when a SCANZ member is not verified")
+    @app_commands.default_permissions(administrator=True)
+    async def set_needs_role(self, interaction: discord.Interaction, role: discord.Role):
+        self._set_config("needs_role_id", str(role.id))
+        await interaction.response.send_message(
+            f"✅ Needs-verification role set to {role.mention}.", ephemeral=True
         )
 
     @commands.Cog.listener()

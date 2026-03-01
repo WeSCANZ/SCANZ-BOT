@@ -64,10 +64,11 @@ This document lists all available commands for the SCANZ-BOT.
 
 ## Verification Commands
 *   **`/verify`** (Slash Command)
-    *   **Description**: Link your Discord account to your RSI Handle using a unique bio checksum.
-    *   **Usage**: `/verify handle:[Your_RSI_Handle]`
+    *   **Description**: Link your Discord account to your RSI Handle using a unique bio checksum. Optionally specify which organisation/affiliate you are verifying for.
+    *   **Usage**: `/verify handle:[Your_RSI_Handle] org:[ORG]`
     *   **Arguments**:
         *   `handle`: Your exact Star Citizen RSI Handle.
+        *   `org` *(Optional)*: Symbol of the organisation/affiliate (autocomplete supported).
     *   **Permission**: Everyone
 *   **`/set_verified_role`** (Slash Command)
     *   **Description**: Admin command to set the role granted upon successful RSI Verification.
@@ -75,6 +76,26 @@ This document lists all available commands for the SCANZ-BOT.
     *   **Arguments**:
         *   `role`: The role to grant verified users.
     *   **Permission**: Admin
+*   **`/set_scanz_role`**
+    *   **Description**: Admin command to configure the role that identifies SCANZ members (used for enforcement and audit tagging).
+    *   **Usage**: `/set_scanz_role role:@SCANZ`
+    *   **Permission**: Admin
+*   **`/set_needs_role`**
+    *   **Description**: Admin command to set the role that will be applied to members needing verification.
+    *   **Usage**: `/set_needs_role role:@NeedsVerification`
+    *   **Permission**: Admin
+*   **`/add_org`**
+    *   **Description**: Admin command to add an RSI organisation or affiliate symbol to the configuration.
+    *   **Usage**: `/add_org symbol:SCANZ`
+    *   **Permission**: Admin
+*   **`/remove_org`**
+    *   **Description**: Admin command to remove an organisation symbol.
+    *   **Usage**: `/remove_org symbol:SCANZ`
+    *   **Permission**: Admin
+*   **`/list_orgs`**
+    *   **Description**: Displays the currently configured organisation symbols.
+    *   **Usage**: `/list_orgs`
+    *   **Permission**: Everyone
 *   **`/grant_verified`** (Slash Command)
     *   **Description**: Admin shortcut to manually apply the verified role and RSI Handle nickname to an already-verified member.
     *   **Usage**: `/grant_verified member:@SomeUser`
@@ -82,11 +103,12 @@ This document lists all available commands for the SCANZ-BOT.
         *   `member`: The Discord member to apply the verified role and nickname to.
     *   **Permission**: Admin
 *   **`/manual_verify`** (Slash Command)
-    *   **Description**: Admin command to manually initiate the verification process for a member and an RSI handle. Generates a checksum challenge.
-    *   **Usage**: `/manual_verify member:@SomeUser handle:RSI_Handle`
+    *   **Description**: Admin command to manually initiate the verification process for a member and an RSI handle. Generates a checksum challenge. You may indicate which organisation this verification is for.
+    *   **Usage**: `/manual_verify member:@SomeUser handle:RSI_Handle org:[ORG]`
     *   **Arguments**:
         *   `member`: The Discord member to verify.
         *   `handle`: The RSI handle to link.
+        *   `org` *(Optional)*: Organisation symbol (autocomplete).
     *   **Permission**: Admin
 *   **`/export_verified`** (Slash Command)
     *   **Description**: Admin command to export the entire verification database as a CSV file.
@@ -101,13 +123,14 @@ This document lists all available commands for the SCANZ-BOT.
 
 ## Roster Monitor (Admin)
 *   **`/roster_audit`** (Slash Command)
-    *   **Description**: Manually triggers a check of all verified members to ensure they are still in the SCANZ organization on RSI.
+    *   **Description**: Manually triggers a check of all verified members (optionally limited by org) to ensure they are still active in their configured RSI organisation.
     *   **Permission**: Admin
 *   **`/set_roster_channel`** (Slash Command)
     *   **Description**: Sets the destination for weekly roster audit reports.
     *   **Permission**: Admin
 *   **`/org_full_sync`** (Slash Command)
-    *   **Description**: Admin command to perform a comprehensive sync between the RSI organization roster and the bot's verification database. Identifies unlinked RSI members.
+    *   **Description**: Admin command to perform a comprehensive sync between one or all RSI organisation rosters and the bot's verification database. Identifies unlinked RSI members.
+    *   **Usage**: `/org_full_sync org:[ORG]` (org parameter is optional)
     *   **Permission**: Admin
 
 ## Suggestion Box
