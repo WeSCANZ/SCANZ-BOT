@@ -139,7 +139,7 @@ class RosterMonitor(commands.Cog):
         if not target_channel_id:
             if trigger_interaction:
                 await trigger_interaction.followup.send(
-                    "❌ Audit channel not set. Use `/set_roster_channel`."
+                    "❌ Audit channel not set. Use `/set_roster_channel`.", ephemeral=True
                 )
             return
 
@@ -149,7 +149,7 @@ class RosterMonitor(commands.Cog):
 
         verified_members = self._get_verified_links()
         if trigger_interaction:
-            await trigger_interaction.followup.send("🔄 Syncing roles for guild members...")
+            await trigger_interaction.followup.send("🔄 Syncing roles for guild members...", ephemeral=True)
         # run role synchronization for everyone who has the SCANZ role; this will
         # mark unverified members with the needs-verification role and clean up
         # anyone who recently became verified.
@@ -165,12 +165,12 @@ class RosterMonitor(commands.Cog):
 
         if not verified_members:
             if trigger_interaction:
-                await trigger_interaction.followup.send("No verified members found in database.")
+                await trigger_interaction.followup.send("No verified members found in database.", ephemeral=True)
             return
 
         if trigger_interaction:
             await trigger_interaction.followup.send(
-                f"🔍 Starting roster audit for {len(verified_members)} entries..."
+                f"🔍 Starting roster audit for {len(verified_members)} entries...", ephemeral=True
             )
 
         audit_results = []
@@ -223,7 +223,7 @@ class RosterMonitor(commands.Cog):
             await target_channel.send(content=content, embed=embed)
 
         if trigger_interaction:
-            await trigger_interaction.followup.send("✅ Audit complete! Results sent to the audit channel.")
+            await trigger_interaction.followup.send("✅ Audit complete! Results sent to the audit channel.", ephemeral=True)
 
     @app_commands.command(
         name="set_roster_channel", description="Admin: Set the channel for roster audit notifications."
@@ -279,7 +279,7 @@ class RosterMonitor(commands.Cog):
             return
 
         await interaction.followup.send(
-            f"📥 Fetching members for {', '.join(orgs)} from RSI (this may take a minute)..."
+            f"📥 Fetching members for {', '.join(orgs)} from RSI (this may take a minute)...", ephemeral=True
         )
 
         missing_from_db = []
