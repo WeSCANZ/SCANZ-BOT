@@ -411,8 +411,18 @@ class MessageEnforcer(commands.Cog):
         # Resolve the target channel
         target_channel = await self._resolve_target_channel(interaction, channel)
 
-        # Ping logic - Fixed to @SCANZ role
-        scanz_role = discord.utils.get(interaction.guild.roles, name="SCANZ")
+        # Ping logic - retrieve configured role or fall back to name
+        def _get_scanz_role():
+            role_id = None
+            cog = self.bot.get_cog("RSIVerification")
+            if cog:
+                role_id = cog._get_config("scanz_role_id")
+            if role_id:
+                return interaction.guild.get_role(int(role_id))
+            # fallback to name
+            return discord.utils.get(interaction.guild.roles, name="SCANZ")
+
+        scanz_role = _get_scanz_role()
         mention_str = ""
 
         if scanz_role:
@@ -428,10 +438,8 @@ class MessageEnforcer(commands.Cog):
                 except discord.Forbidden:
                     pass  # Bot lacks permission to edit role
         else:
-            # Revert to a general message or error if the role is missing?
-            # The USER requested it be fixed to @SCANZ, so if it doesn't exist, we should probably warn.
             await interaction.response.send_message(
-                "❌ Error: Could not find the `@SCANZ` role in this server. Please contact an admin.",
+                "❌ Error: Could not find the SCANZ role in this server. Please contact an admin.",
                 ephemeral=True,
             )
             return
