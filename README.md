@@ -38,7 +38,7 @@ Development repository for the SCANZ Star Citizen Org Discord Bot.
 
 ## Features
 - **General**: `!hi`, `!ping`, `!time`, `/scanz_commands`, and `@SCANZ_BOT` keyword mentions.
-- **RSI Verification**: Link Discord accounts to Roberts Space Industries profiles using `/verify` and profile bio checksums.
+- **RSI Verification**: Link Discord accounts to Roberts Space Industries profiles using `/verify`. Admins can manually link members via `/manual_verify`, search the database with `/search_verified`, or export data to CSV with `/export_verified`.
+- **Roster & Org Sync**: Monitor organization membership with `/roster_audit` and perform full synchronization checks against the RSI website using `/org_full_sync`.
 - **Message Enforcer**: Slash-command based LFG/LFM/EVENT posts with channel enforcement and automatic role-based pings.
-- **Role Subscriptions**: Interactive button-based system for members to subscribe to specific activity pings.
 - **System Notifications**: Automatic reboot and update alerts sent to a designated log channel, including git branch and commit info.

@@ -1,6 +1,7 @@
 import os
-import discord
 import subprocess
+
+import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -65,12 +66,12 @@ class ScanzBot(commands.Bot):
                         branch = "unknown"
 
                     await channel.send(
-                        f"🚀 **Bot Updated & Online!**\n**Branch:** `{branch}`\n**Latest Change:** `{commit_msg}`"
+                        f"🚀 **Bot Updated & Online!**\n"
+                        f"**Branch:** `{branch}`\n"
+                        f"**Latest Change:** `{commit_msg}`"
                     )
             except ValueError:
-                print(
-                    f"Error: Invalid LOG_CHANNEL_ID format in environment variables: {channel_id_str}"
-                )
+                print(f"Error: Invalid LOG_CHANNEL_ID format in environment variables: {channel_id_str}")
         else:
             print("Warning: LOG_CHANNEL_ID not found in environment variables.")
 
