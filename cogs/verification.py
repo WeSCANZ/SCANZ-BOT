@@ -70,6 +70,13 @@ class VerifyNowView(discord.ui.View):
             )
 
 
+async def org_autocomplete(interaction: discord.Interaction, current: str):
+    """Autocomplete helper for organisation parameters."""
+    cog = interaction.client.get_cog("RSIVerification")
+    orgs = cog._get_orgs() if cog else []
+    return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
+
+
 class RSIVerification(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -189,11 +196,6 @@ class RSIVerification(commands.Cog):
         self._org_cache = orgs
         return True
 
-    async def org_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplete helper for organisation parameters."""
-        orgs = self._get_orgs()
-        return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
-
     def _is_verified(self, discord_id: int, org: str = None) -> str:
         """Return the linked RSI handle for the given discord ID.
 
@@ -280,7 +282,7 @@ class RSIVerification(commands.Cog):
     @app_commands.command(name="verify", description="Link your Discord account to your RSI Handle.")
     @app_commands.describe(handle="Your exact Star Citizen RSI Handle")
     @app_commands.describe(org="The organisation/affiliate you belong to")
-    @app_commands.autocomplete(org="org_autocomplete")
+    @app_commands.autocomplete(org=org_autocomplete)
     async def verify(self, interaction: discord.Interaction, handle: str, org: str = None):
         # ensure there is at least one configured org
         orgs = self._get_orgs()
@@ -354,7 +356,7 @@ class RSIVerification(commands.Cog):
     @app_commands.describe(member="The Discord member", handle="The RSI Handle to link")
     @app_commands.describe(org="Organisation symbol for this manual verification")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.autocomplete(org="org_autocomplete")
+    @app_commands.autocomplete(org=org_autocomplete)
     async def manual_verify(
         self, interaction: discord.Interaction, member: discord.Member, handle: str, org: str = None
     ):
