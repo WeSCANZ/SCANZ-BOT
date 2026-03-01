@@ -52,6 +52,9 @@ class General(commands.Cog):
         embed.add_field(name="`!hi`", value="Says hello with a random message.", inline=False)
         embed.add_field(name="`!ping`", value="Checks if the bot is responsive.", inline=False)
         embed.add_field(name="`!time`", value="Displays current time across SCANZ timezones.", inline=False)
+        embed.add_field(
+            name="`!sync`", value="Admin: Force instant slash command update for this server.", inline=False
+        )
         embed.add_field(name="`/scanz_commands`", value="Lists all available commands.", inline=False)
 
         # SC Tools
@@ -95,6 +98,16 @@ class General(commands.Cog):
             name="`/grant_verified`",
             value="Admin: Manually apply roles/nick to a verified user.",
             inline=False,
+        )
+        embed.add_field(
+            name="`/manual_verify`", value="Admin: Manually link a member to an RSI handle.", inline=False
+        )
+        embed.add_field(
+            name="`/export_verified`", value="Admin: Export verification database to CSV.", inline=False
+        )
+        embed.add_field(name="`/search_verified`", value="Admin: Search for a verified member.", inline=False)
+        embed.add_field(
+            name="`/org_full_sync`", value="Admin: Sync RSI roster with bot database.", inline=False
         )
 
         # Enforcer Post
