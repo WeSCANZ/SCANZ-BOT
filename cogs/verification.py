@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import random
 import sqlite3
@@ -215,6 +217,131 @@ class RSIVerification(commands.Cog):
         )
 
     @app_commands.command(
+        name="manual_verify",
+        description="Admin: Manually initiate verification for a specific member.",
+    )
+    @app_commands.describe(member="The Discord member", handle="The RSI Handle to link")
+    @app_commands.default_permissions(administrator=True)
+    async def manual_verify(self, interaction: discord.Interaction, member: discord.Member, handle: str):
+        # Generate challenge code
+        code = self._generate_code()
+
+        embed = discord.Embed(
+            title="Manual Verification Initiated",
+            description=(
+                f"You are initiating manual verification for {member.mention} with RSI Handle "
+                f"**{handle}**.\n\n"
+                f"1. Ask the user to add `{code}` to their RSI Short Bio.\n"
+                "2. Click the button below once they have done so."
+            ),
+            color=discord.Color.blue(),
+        )
+        embed.set_footer(text=f"Target: {member.name} | Handle: {handle}")
+
+        # Reusing VerifyNowView logic but adapted for manual flow
+        class ManualVerifyView(discord.ui.View):
+            def __init__(self, cog, target_member, target_handle, target_code):
+                super().__init__(timeout=None)
+                self.cog = cog
+                self.member = target_member
+                self.handle = target_handle
+                self.code = target_code
+
+            @discord.ui.button(label="Complete Verification", style=discord.ButtonStyle.success, emoji="✅")
+            async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                await interaction.response.defer(ephemeral=True)
+                success, message = await self.cog._scrape_rsi_bio(self.handle, self.code)
+
+                if success:
+                    self.cog._link_account(self.member.id, self.handle)
+
+                    # Grant role
+                    role_id_str = self.cog._get_config("verified_role_id")
+                    if role_id_str:
+                        role = interaction.guild.get_role(int(role_id_str))
+                        if role:
+                            try:
+                                await self.member.add_roles(role)
+                            except discord.Forbidden:
+                                pass
+
+                    await interaction.followup.send(
+                        f"✅ Successfully verified and linked {self.member.mention} to `{self.handle}`.",
+                        ephemeral=True,
+                    )
+                    self.stop()
+                else:
+                    await interaction.followup.send(f"❌ Verification failed: {message}", ephemeral=True)
+
+        view = ManualVerifyView(self, member, handle, code)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(
+        name="export_verified",
+        description="Admin: Export the verification database to a CSV file.",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def export_verified(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT discord_id, rsi_handle FROM rsi_links")
+            rows = cursor.fetchall()
+
+        if not rows:
+            await interaction.followup.send("The verification database is empty.", ephemeral=True)
+            return
+
+        # Use in-memory buffer for CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Discord ID", "Discord Name", "RSI Handle"])
+
+        for discord_id, rsi_handle in rows:
+            # Try to resolve member name for readability in CSV
+            member = interaction.guild.get_member(discord_id)
+            name = f"{member.name}" if member else "Unknown/Left"
+            writer.writerow([discord_id, name, rsi_handle])
+
+        output.seek(0)
+        file = discord.File(io.BytesIO(output.getvalue().encode()), filename="verified_members.csv")
+
+        await interaction.followup.send(
+            f"✅ Exported {len(rows)} verified members.", file=file, ephemeral=True
+        )
+
+    @app_commands.command(
+        name="search_verified",
+        description="Admin: Search for a verified member by Handle or Discord ID.",
+    )
+    @app_commands.describe(query="RSI Handle, Discord ID, or Mention")
+    @app_commands.default_permissions(administrator=True)
+    async def search_verified(self, interaction: discord.Interaction, query: str):
+        # Cleanup query (mentions, etc)
+        clean_query = query.replace("<@", "").replace(">", "").replace("!", "")
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT discord_id, rsi_handle FROM rsi_links WHERE rsi_handle LIKE ? OR discord_id = ?",
+                (f"%{query}%", clean_query if clean_query.isdigit() else 0),
+            )
+            rows = cursor.fetchall()
+
+        if not rows:
+            await interaction.response.send_message(f"No results found for `{query}`.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title="Verification Search Results", color=discord.Color.blue())
+        for discord_id, rsi_handle in rows[:10]:  # Limit to 10 for sanity
+            member = interaction.guild.get_member(discord_id)
+            mention = member.mention if member else f"ID: {discord_id} (Left Server)"
+            embed.add_field(name=rsi_handle, value=mention, inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(
         name="grant_verified",
         description="Admin: Manually grant the verified role and RSI nickname to a member.",
     )
@@ -231,13 +358,6 @@ class RSIVerification(commands.Cog):
             return
 
         messages = []
-
-        # Apply nickname (DISABLED - Permission Issues)
-        # try:
-        #     await member.edit(nick=rsi_handle)
-        #     messages.append(f"✅ Nickname set to `{rsi_handle}`.")
-        # except discord.Forbidden:
-        #     messages.append("⚠️ Could not set nickname (permission denied).")
 
         # Apply role
         role_id_str = self._get_config("verified_role_id")

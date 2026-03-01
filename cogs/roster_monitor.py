@@ -61,6 +61,67 @@ class RosterMonitor(commands.Cog):
             except Exception as e:
                 return False, f"Error: {str(e)}"
 
+    async def _fetch_all_org_members(self) -> list[str]:
+        """Scrape the entire RSI organization roster and return a list of handles."""
+        api_url = "https://robertsspaceindustries.com/api/orgs/getOrgMembers"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"https://robertsspaceindustries.com/orgs/{self.org_handle}/members",
+        }
+
+        handles = []
+        page = 1
+        page_size = 32
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            while True:
+                payload = {
+                    "symbol": self.org_handle,
+                    "search": "",
+                    "pagesize": page_size,
+                    "page": page,
+                }
+                try:
+                    async with session.post(api_url, json=payload) as response:
+                        if response.status != 200:
+                            print(f"[RosterSync] Error: API returned {response.status}")
+                            break
+
+                        data = await response.json()
+                        if not data.get("success") or "data" not in data:
+                            break
+
+                        html = data["data"].get("html", "")
+                        if not html:
+                            break
+
+                        soup = BeautifulSoup(html, "html.parser")
+                        # The subagent identified .nick as the handle container
+                        nicks = soup.select(".nick")
+                        if not nicks:
+                            break
+
+                        for nick in nicks:
+                            handle = nick.get_text(strip=True)
+                            if handle:
+                                handles.append(handle)
+
+                        # Check if we should continue
+                        total_rows = data["data"].get("totalrows", 0)
+                        if len(handles) >= total_rows:
+                            break
+
+                        page += 1
+                        # Mitigation for rate limits
+                        await asyncio.sleep(1)
+
+                except Exception as e:
+                    print(f"[RosterSync] Scraping exception: {e}")
+                    break
+
+        return list(set(handles))  # Ensure uniqueness
+
     @tasks.loop(hours=168)  # 1 week
     async def roster_check_loop(self):
         """Weekly background task to audit the organization roster."""
@@ -159,6 +220,62 @@ class RosterMonitor(commands.Cog):
     async def roster_audit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self._run_audit(interaction)
+
+    @app_commands.command(
+        name="org_full_sync",
+        description="Admin: Sync the entire RSI Org roster with the verification database.",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def org_full_sync(self, interaction: discord.Interaction):
+        """Perform a full synchronization check between RSI and Discord."""
+        await interaction.response.defer(ephemeral=True)
+
+        verified_links = self._get_verified_links()
+        verified_handles = {h.lower() for _, h in verified_links}
+
+        await interaction.followup.send(
+            f"📥 Fetching all members from `{self.org_handle}` roster on RSI (this may take a minute)..."
+        )
+
+        rsi_handles = await self._fetch_all_org_members()
+        if not rsi_handles:
+            await interaction.followup.send("❌ Error: Could not fetch members from RSI.", ephemeral=True)
+            return
+
+        missing_from_db = []
+        for h in rsi_handles:
+            if h.lower() not in verified_handles:
+                missing_from_db.append(h)
+
+        embed = discord.Embed(
+            title=f"Full Org Sync: {self.org_handle}",
+            description=(
+                f"Comparison complete between **{len(rsi_handles)}** RSI members "
+                f"and **{len(verified_handles)}** verified database entries."
+            ),
+            color=discord.Color.blue(),
+            timestamp=datetime.now(),
+        )
+
+        # 1. Summary Stats
+        embed.add_field(name="RSI Members", value=str(len(rsi_handles)), inline=True)
+        embed.add_field(name="Verified Linked", value=str(len(verified_handles)), inline=True)
+        embed.add_field(name="Not Verified", value=str(len(missing_from_db)), inline=True)
+
+        # 2. List Missing (Limit for Embed)
+        if missing_from_db:
+            missing_str = "\n".join([f"- `{h}`" for h in missing_from_db[:30]])
+            if len(missing_from_db) > 30:
+                missing_str += f"\n*...and {len(missing_from_db) - 30} more.*"
+            embed.add_field(name="Unlinked RSI Members", value=missing_str, inline=False)
+        else:
+            embed.add_field(
+                name="Unlinked RSI Members",
+                value="✅ All RSI members are verified in the database!",
+                inline=False,
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
