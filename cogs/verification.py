@@ -27,7 +27,11 @@ class VerifyNowView(discord.ui.View):
 
         if success:
             # 1. Update database
-            self.cog._link_account(interaction.user.id, self.handle)
+            self.cog._link_account(
+                interaction.user.id,
+                self.handle,
+                message.get("org", None) if isinstance(message, dict) else None,
+            )
 
             # Fetch the actual Member object from the guild (interaction.user is a User, not a Member)
             member = interaction.guild.get_member(interaction.user.id)
@@ -86,7 +90,8 @@ class RSIVerification(commands.Cog):
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS rsi_links (
                     discord_id INTEGER PRIMARY KEY,
-                    rsi_handle TEXT NOT NULL
+                    rsi_handle TEXT NOT NULL,
+                    org TEXT
                 )
             """)
             cursor.execute("""
@@ -95,6 +100,13 @@ class RSIVerification(commands.Cog):
                     value TEXT
                 )
             """)
+
+            # Check if org column exists, add it if not (migration)
+            cursor.execute("PRAGMA table_info(rsi_links)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "org" not in columns:
+                cursor.execute("ALTER TABLE rsi_links ADD COLUMN org TEXT")
+
             conn.commit()
 
     def _set_config(self, key: str, value: str):
@@ -123,19 +135,22 @@ class RSIVerification(commands.Cog):
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def _link_account(self, discord_id: int, handle: str):
+    def _link_account(self, discord_id: int, handle: str, org: str = None):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle)
-                VALUES (?, ?)
+                INSERT INTO rsi_links (discord_id, rsi_handle, org)
+                VALUES (?, ?, ?)
+                ON CONFLICT(discord_id) DO UPDATE SET
+                    rsi_handle=excluded.rsi_handle,
+                    org=excluded.org
             """,
-                (discord_id, handle),
+                (discord_id, handle, org),
             )
             conn.commit()
 
-    async def _scrape_rsi_bio(self, handle: str, code: str) -> tuple[bool, str]:
+    async def _scrape_rsi_bio(self, handle: str, code: str) -> tuple[bool, str | dict]:
         url = f"https://robertsspaceindustries.com/citizens/{handle}"
         async with aiohttp.ClientSession() as session:
             try:
@@ -152,16 +167,26 @@ class RSIVerification(commands.Cog):
                     value_divs = soup.find_all("div", class_="value")
 
                     bio_text = ""
+                    code_found = False
                     for div in value_divs:
                         text = div.get_text(strip=True)
                         if code in text:
-                            return True, "Code successfully validated against the bio!"
+                            code_found = True
+                            break
                         bio_text += " " + text
 
-                    return False, (
-                        "The code was not found in your Short Bio. Sometimes RSI caches profiles—"
-                        "wait a minute and try again."
-                    )
+                    if not code_found:
+                        return False, (
+                            "The code was not found in your Short Bio. Sometimes RSI caches profiles—"
+                            "wait a minute and try again."
+                        )
+
+                    # Extract main org if code is found
+                    org_link = soup.select_one(".main-org .info .entry .value a")
+                    org = org_link.text.strip() if org_link else None
+
+                    return True, {"message": "Code successfully validated against the bio!", "org": org}
+
             except Exception as e:
                 return False, f"Scraping error: {str(e)}"
 
@@ -253,7 +278,11 @@ class RSIVerification(commands.Cog):
                 success, message = await self.cog._scrape_rsi_bio(self.handle, self.code)
 
                 if success:
-                    self.cog._link_account(self.member.id, self.handle)
+                    self.cog._link_account(
+                        self.member.id,
+                        self.handle,
+                        message.get("org", None) if isinstance(message, dict) else None,
+                    )
 
                     # Grant role
                     role_id_str = self.cog._get_config("verified_role_id")
