@@ -9,6 +9,14 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 
+async def org_autocomplete(interaction: discord.Interaction, current: str):
+    cog = interaction.client.get_cog("RSIVerification")
+    if not cog:
+        return []
+    orgs = cog._get_orgs()
+    return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
+
+
 class RosterMonitor(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -25,13 +33,6 @@ class RosterMonitor(commands.Cog):
             cursor = conn.cursor()
             cursor.execute("SELECT discord_id, rsi_handle, org_handle FROM rsi_links")
             return cursor.fetchall()
-
-    async def org_autocomplete(self, interaction: discord.Interaction, current: str):
-        cog = self.bot.get_cog("RSIVerification")
-        if not cog:
-            return []
-        orgs = cog._get_orgs()
-        return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
 
     def _get_config(self, key: str) -> str:
         with sqlite3.connect(self.db_path) as conn:
@@ -248,7 +249,7 @@ class RosterMonitor(commands.Cog):
         description="Admin: Sync one or all RSI Org rosters with the verification database.",
     )
     @app_commands.describe(org="The organisation symbol to sync (optional)")
-    @app_commands.autocomplete(org="org_autocomplete")
+    @app_commands.autocomplete(org=org_autocomplete)
     @app_commands.default_permissions(administrator=True)
     async def org_full_sync(self, interaction: discord.Interaction, org: str = None):
         """Perform a full synchronization check between RSI and Discord.

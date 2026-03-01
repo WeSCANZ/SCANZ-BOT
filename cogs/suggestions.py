@@ -95,10 +95,12 @@ class Suggestions(commands.Cog):
     )
     async def suggestion(self, interaction: discord.Interaction, text: str, anonymous: bool = False):
         """Submit a suggestion."""
+        await interaction.response.defer(ephemeral=True)
+
         target_channel_id = self._get_config(interaction.guild_id)
 
         if not target_channel_id:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ Suggestions are not currently enabled for this server (no target channel set).",
                 ephemeral=True,
             )
@@ -106,7 +108,7 @@ class Suggestions(commands.Cog):
 
         target_channel = interaction.guild.get_channel(target_channel_id)
         if not target_channel:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ Suggestion channel not found. Please ask an admin to reconfigure it.", ephemeral=True
             )
             return
@@ -149,12 +151,12 @@ class Suggestions(commands.Cog):
             # Log to database with thread ID
             self._log_suggestion(interaction.user.id, text, anonymous, thread.id)
 
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "✅ Your suggestion has been submitted successfully! A discussion thread has been created.",
                 ephemeral=True,
             )
         except discord.Forbidden:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ I don't have permission to send messages or create threads in the suggestion channel.",
                 ephemeral=True,
             )
