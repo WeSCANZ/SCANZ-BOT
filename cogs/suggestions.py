@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone 
 
 import discord
 from discord import app_commands
@@ -74,7 +74,7 @@ class Suggestions(commands.Cog):
                 INSERT INTO suggestions_log (user_id, suggestion_text, anonymous, timestamp, thread_id)
                 VALUES (?, ?, ?, ?, ?)
             """,
-                (user_id, text, 1 if anonymous else 0, datetime.now().isoformat(), thread_id),
+                (user_id, text, 1 if anonymous else 0, datetime.now(timezone.utc).isoformat(), thread_id),
             )
             conn.commit()
 
@@ -121,7 +121,7 @@ class Suggestions(commands.Cog):
             title="New Suggestion",
             description=text,
             color=discord.Color.gold() if not anonymous else discord.Color.light_grey(),
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         if anonymous:
@@ -198,7 +198,7 @@ class Suggestions(commands.Cog):
                         f"**{message.guild.name}**."
                     ),
                     color=discord.Color.blue(),
-                    timestamp=datetime.now(),
+                    timestamp=datetime.now(timezone.utc),
                 )
                 embed.add_field(
                     name="Reply Content", value=message.content[:1024] or "*[Embed/Image]*", inline=False
