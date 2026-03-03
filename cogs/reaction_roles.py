@@ -39,6 +39,7 @@ class ReactionRoles(commands.Cog):
                 self.reaction_roles[msg_id][emoji] = role_id
 
     @app_commands.command(name="setup_reaction_role", description="Setup a reaction role message")
+    @app_commands.default_permissions(manage_roles=True)
     @app_commands.describe(
         role="The role to assign", emoji="The emoji to react with", message="Message content"
     )
