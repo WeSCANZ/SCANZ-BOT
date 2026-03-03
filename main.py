@@ -23,7 +23,8 @@ class ScanzBot(commands.Bot):
 
     async def setup_hook(self):
         # Load cogs
-        for filename in os.listdir("./cogs"):
+        cogs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cogs")
+        for filename in os.listdir(cogs_dir):
             if filename.endswith(".py"):
                 await self.load_extension(f"cogs.{filename[:-3]}")
 
