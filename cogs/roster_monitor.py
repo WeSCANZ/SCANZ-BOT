@@ -165,7 +165,9 @@ class RosterMonitor(commands.Cog):
 
         if not verified_members:
             if trigger_interaction:
-                await trigger_interaction.followup.send("No verified members found in database.", ephemeral=True)
+                await trigger_interaction.followup.send(
+                    "No verified members found in database.", ephemeral=True
+                )
             return
 
         if trigger_interaction:
@@ -199,7 +201,8 @@ class RosterMonitor(commands.Cog):
             embed = discord.Embed(
                 title="Roster Audit: Anomalies Found",
                 description=(
-                    f"⚠️ {len(audit_results)} entries reference handles no longer detected in their org.\n\nPlease review their roles manually."
+                    f"⚠️ {len(audit_results)} entries reference handles no longer detected in their org.\n\n"
+                    "Please review their roles manually."
                 ),
                 color=discord.Color.red(),
                 timestamp=datetime.now(timezone.utc),
@@ -223,7 +226,9 @@ class RosterMonitor(commands.Cog):
             await target_channel.send(content=content, embed=embed)
 
         if trigger_interaction:
-            await trigger_interaction.followup.send("✅ Audit complete! Results sent to the audit channel.", ephemeral=True)
+            await trigger_interaction.followup.send(
+                "✅ Audit complete! Results sent to the audit channel.", ephemeral=True
+            )
 
     @app_commands.command(
         name="set_roster_channel", description="Admin: Set the channel for roster audit notifications."

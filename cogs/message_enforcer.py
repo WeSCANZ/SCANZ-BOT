@@ -215,7 +215,7 @@ class MessageEnforcer(commands.Cog):
             )
             conn.commit()
 
-    def _get_post_target(self, guild_id: int) -> int:
+    def _get_post_target(self) -> int:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT channel_id FROM post_targets WHERE post_type = "Ping"')
@@ -228,7 +228,7 @@ class MessageEnforcer(commands.Cog):
         if explicit_channel:
             return explicit_channel
 
-        target_id = self._get_post_target(interaction.guild_id)
+        target_id = self._get_post_target()
         if target_id:
             channel = interaction.guild.get_channel(target_id)
             if channel:
@@ -336,7 +336,8 @@ class MessageEnforcer(commands.Cog):
         # Check if it might be a valid command from an old prefix (we want to encourage slash commands,
         # but discord handles slash without hitting on_message with content in the same way usually.
         # Regular messages hit this though.)
-        # If we really want ZERO non-bot messages, we just delete everything. The slash command responses come from the bot.
+        # If we really want ZERO non-bot messages, we just delete everything.
+        # The slash command responses come from the bot.
 
         try:
             # Delete the user's message
@@ -428,13 +429,13 @@ class MessageEnforcer(commands.Cog):
         if scanz_role:
             mention_str = scanz_role.mention
 
-            # Handle mentionability if bot has permissions
-            if not scanz_role.mentionable:
+            # Track original mentionability so we only reset if WE changed it
+            was_mentionable = scanz_role.mentionable
+            if not was_mentionable:
                 try:
                     await scanz_role.edit(
                         mentionable=True, reason=f"Pinging {scanz_role.name} role via /ping command"
                     )
-                    # We'll reset it after sending the message
                 except discord.Forbidden:
                     pass  # Bot lacks permission to edit role
         else:
@@ -448,21 +449,19 @@ class MessageEnforcer(commands.Cog):
         try:
             await target_channel.send(content=mention_str, embed=embed)
 
-            # Reset mentionability if we changed it
-            if scanz_role and mention_str != "":
-                # Wait a moment for Discord to process the ping
+            # Only reset mentionability if we were the one who enabled it
+            if scanz_role and not was_mentionable:
                 await asyncio.sleep(1)
                 try:
-                    # If we made it mentionable, turn it back off (best effort)
                     await scanz_role.edit(mentionable=False, reason="Resetting @SCANZ mentionability")
                 except discord.Forbidden:
                     pass
 
-            # Send an ephemeral confirmation in the original channel
+            # Always send an ephemeral confirmation — never re-post the embed via interaction
             if target_channel.id == interaction.channel_id:
-                # If it's the same channel, we just respond with the full embed.
-                # (Discord slash commands look best when the bot replies directly to the command)
-                await interaction.response.send_message(embed=embed)
+                await interaction.response.send_message(
+                    "✅ Your ping has been posted in this channel.", ephemeral=True
+                )
             else:
                 await interaction.response.send_message(
                     f"✅ Your post has been successfully published in {target_channel.mention}",

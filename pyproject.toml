@@ -1,15 +1,19 @@
 [tool.ruff]
-# Enable pycodestyle (E) and Pyflakes (F) codes by default.
-select = ["E", "F", "I"]
-ignore = []
-
-# Allow fix for all enabled rules (when `--fix`) is provided.
-fixable = ["ALL"]
-unfixable = []
-
 # Increased for better readability on modern screens.
 line-length = 110
 indent-width = 4
+
+[tool.ruff.lint]
+# Enable pycodestyle (E), Pyflakes (F), and isort (I) rules.
+select = ["E", "F", "I"]
+ignore = []
+
+# Allow fix for all enabled rules (when `--fix` is provided).
+fixable = ["ALL"]
+unfixable = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
