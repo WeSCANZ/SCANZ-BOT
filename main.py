@@ -24,15 +24,29 @@ class ScanzBot(commands.Bot):
     async def setup_hook(self):
         # Load cogs
         cogs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cogs")
+
+        # Load verification cog first to ensure database schema is created
+        if os.path.exists(os.path.join(cogs_dir, "verification.py")):
+            try:
+                await self.load_extension("cogs.verification")
+            except commands.ExtensionError as e:
+                print(f"Failed to load verification cog: {e}")
+
         for filename in os.listdir(cogs_dir):
-            if filename.endswith(".py"):
-                await self.load_extension(f"cogs.{filename[:-3]}")
+            if filename.endswith(".py") and filename != "verification.py":
+                try:
+                    await self.load_extension(f"cogs.{filename[:-3]}")
+                except commands.ExtensionError as e:
+                    print(f"Failed to load cog {filename}: {e}")
 
         # Sync slash commands
         await self.tree.sync()
         print(f"Synced command tree for {self.user}")
 
     async def on_ready(self):
+        if not self.user:
+            return
+
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print("------")
 
@@ -43,7 +57,7 @@ class ScanzBot(commands.Bot):
                 channel_id = int(channel_id_str)
                 channel = self.get_channel(channel_id)
 
-                if channel:
+                if isinstance(channel, discord.TextChannel):
                     # Get the latest git commit message and branch
                     try:
                         commit_msg = (

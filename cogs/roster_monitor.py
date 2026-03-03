@@ -1,6 +1,8 @@
 import asyncio
 import sqlite3
+import typing
 from datetime import datetime, timezone
+from typing import List, Optional, Tuple
 
 import aiohttp
 import discord
@@ -10,7 +12,8 @@ from discord.ext import commands, tasks
 
 
 async def org_autocomplete(interaction: discord.Interaction, current: str):
-    cog = interaction.client.get_cog("RSIVerification")
+    bot = typing.cast(commands.Bot, interaction.client)
+    cog = typing.cast(typing.Any, bot.get_cog("RSIVerification"))
     if not cog:
         return []
     orgs = cog._get_orgs()
@@ -24,30 +27,41 @@ class RosterMonitor(commands.Cog):
         # the list of organisations will be retrieved from the verification cog
         self.roster_check_loop.start()
 
-    def cog_unload(self):
+    async def cog_unload(self):
         self.roster_check_loop.cancel()
 
     def _get_verified_links(self):
         """Fetch all links including organisation info."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT discord_id, rsi_handle, org_handle FROM rsi_links")
-            return cursor.fetchall()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT discord_id, rsi_handle, org_handle FROM rsi_links")
+                return cursor.fetchall()
+        except sqlite3.OperationalError:
+            print("[RosterMonitor] Error: rsi_links table not found.")
+            return []
 
-    def _get_config(self, key: str) -> str:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM rsi_config WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            return row[0] if row else None
+    def _get_config(self, key: str) -> Optional[str]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM rsi_config WHERE key = ?", (key,))
+                row = cursor.fetchone()
+                return str(row[0]) if row else None
+        except sqlite3.OperationalError:
+            print("[RosterMonitor] Error: rsi_config table not found.")
+            return None
 
     def _set_config(self, key: str, value: str):
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT OR REPLACE INTO rsi_config (key, value) VALUES (?, ?)", (key, value))
-            conn.commit()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("INSERT OR REPLACE INTO rsi_config (key, value) VALUES (?, ?)", (key, value))
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            print(f"[RosterMonitor] DB Error setting config: {e}")
 
-    async def _check_org_membership(self, handle: str, org: str) -> tuple[bool, str]:
+    async def _check_org_membership(self, handle: str, org: str) -> Tuple[bool, str]:
         """Scrape rsi profile to check if user is in the given organisation."""
         url = f"https://robertsspaceindustries.com/citizens/{handle}/organizations"
         async with aiohttp.ClientSession() as session:
@@ -62,14 +76,15 @@ class RosterMonitor(commands.Cog):
                     # Look for org links. Usually orgs are linked as /orgs/ORG_HANDLE
                     org_links = soup.find_all("a", href=True)
                     for link in org_links:
-                        if f"/orgs/{org}".lower() in link["href"].lower():
+                        href = link.get("href")
+                        if isinstance(href, str) and f"/orgs/{org}".lower() in href.lower():
                             return True, "Member"
 
                     return False, "Not in Org"
             except Exception as e:
                 return False, f"Error: {str(e)}"
 
-    async def _fetch_all_org_members(self, org: str) -> list[str]:
+    async def _fetch_all_org_members(self, org: str) -> List[str]:
         """Scrape the entire RSI organisation roster for a given org and return handles."""
         api_url = "https://robertsspaceindustries.com/api/orgs/getOrgMembers"
         headers = {
@@ -131,9 +146,15 @@ class RosterMonitor(commands.Cog):
     async def roster_check_loop(self):
         """Weekly background task to audit all configured organisations."""
         await self.bot.wait_until_ready()
+
+        # Ensure the RSIVerification cog is loaded to guarantee database schema exists
+        if not self.bot.get_cog("RSIVerification"):
+            print("[RosterMonitor] RSIVerification cog is not loaded. Skipping audit.")
+            return
+
         await self._run_audit()
 
-    async def _run_audit(self, trigger_interaction: discord.Interaction = None):
+    async def _run_audit(self, trigger_interaction: Optional[discord.Interaction] = None):
         """Execute the audit logic and notify admins for each configured org."""
         target_channel_id = self._get_config("roster_audit_channel")
         if not target_channel_id:
@@ -144,7 +165,7 @@ class RosterMonitor(commands.Cog):
             return
 
         target_channel = self.bot.get_channel(int(target_channel_id))
-        if not target_channel:
+        if not isinstance(target_channel, discord.TextChannel):
             return
 
         verified_members = self._get_verified_links()
@@ -153,7 +174,7 @@ class RosterMonitor(commands.Cog):
         # run role synchronization for everyone who has the SCANZ role; this will
         # mark unverified members with the needs-verification role and clean up
         # anyone who recently became verified.
-        cog = self.bot.get_cog("RSIVerification")
+        cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
         if cog:
             scanz_role_id = cog._get_config("scanz_role_id")
             if scanz_role_id:
@@ -179,7 +200,7 @@ class RosterMonitor(commands.Cog):
         # loop through each stored entry; entries include org value
         for discord_id, handle, org in verified_members:
             # sync discord roles if possible
-            cog = self.bot.get_cog("RSIVerification")
+            cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
             member = target_channel.guild.get_member(discord_id)
             if member and cog:
                 await cog.sync_member_roles(member)
@@ -246,6 +267,11 @@ class RosterMonitor(commands.Cog):
     )
     @app_commands.default_permissions(administrator=True)
     async def roster_audit(self, interaction: discord.Interaction):
+        if not self.bot.get_cog("RSIVerification"):
+            await interaction.response.send_message(
+                "❌ RSIVerification cog is not loaded. Required for database access.", ephemeral=True
+            )
+            return
         await interaction.response.defer(ephemeral=True)
         await self._run_audit(interaction)
 
@@ -256,11 +282,17 @@ class RosterMonitor(commands.Cog):
     @app_commands.describe(org="The organisation symbol to sync (optional)")
     @app_commands.autocomplete(org=org_autocomplete)
     @app_commands.default_permissions(administrator=True)
-    async def org_full_sync(self, interaction: discord.Interaction, org: str = None):
+    async def org_full_sync(self, interaction: discord.Interaction, org: Optional[str] = None):
         """Perform a full synchronization check between RSI and Discord.
 
         If `org` is provided we only sync that symbol; otherwise all configured orgs are scanned.
         """
+        if not self.bot.get_cog("RSIVerification"):
+            await interaction.response.send_message(
+                "❌ RSIVerification cog is not loaded. Required for database access.", ephemeral=True
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         verified_links = self._get_verified_links()
@@ -268,7 +300,7 @@ class RosterMonitor(commands.Cog):
 
         # determine which org(s) to operate on
         orgs = []
-        cog = self.bot.get_cog("RSIVerification")
+        cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
         if cog:
             orgs = cog._get_orgs()
         if org:
