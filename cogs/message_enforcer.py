@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import typing
 
 import discord
 from discord import app_commands
@@ -55,6 +56,10 @@ class PingSubscriptionButton(discord.ui.Button):
         self.role_id = role_id
 
     async def callback(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
+            return
+
         role = interaction.guild.get_role(self.role_id)
         if not role:
             await interaction.response.send_message(
@@ -63,11 +68,12 @@ class PingSubscriptionButton(discord.ui.Button):
             )
             return
 
-        if role in interaction.user.roles:
-            await interaction.user.remove_roles(role)
+        user = typing.cast(discord.Member, interaction.user)
+        if role in user.roles:
+            await user.remove_roles(role)
             await interaction.response.send_message(f"✅ Unsubscribed from **{role.name}**.", ephemeral=True)
         else:
-            await interaction.user.add_roles(role)
+            await user.add_roles(role)
             await interaction.response.send_message(f"✅ Subscribed to **{role.name}**.", ephemeral=True)
 
 

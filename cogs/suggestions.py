@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime, timezone 
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
