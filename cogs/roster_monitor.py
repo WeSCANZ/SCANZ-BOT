@@ -1,6 +1,6 @@
 import asyncio
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiohttp
 import discord
@@ -192,7 +192,7 @@ class RosterMonitor(commands.Cog):
                 title="Roster Audit: Clean",
                 description="✅ All verified members are still active in their configured organisations.",
                 color=discord.Color.green(),
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
             )
             await target_channel.send(embed=embed)
         else:
@@ -202,7 +202,7 @@ class RosterMonitor(commands.Cog):
                     f"⚠️ {len(audit_results)} entries reference handles no longer detected in their org.\n\nPlease review their roles manually."
                 ),
                 color=discord.Color.red(),
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
             )
 
             anomalies_str = ""
@@ -299,7 +299,7 @@ class RosterMonitor(commands.Cog):
             title="Full Org Sync",
             description=("Comparison complete between RSI members and verified database entries."),
             color=discord.Color.blue(),
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         stats = {symbol: 0 for symbol in orgs}
