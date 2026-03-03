@@ -113,9 +113,6 @@ class Suggestions(commands.Cog):
             )
             return
 
-        # Log to database
-        self._log_suggestion(interaction.user.id, text, anonymous)
-
         # Create Embed
         embed = discord.Embed(
             title="New Suggestion",
