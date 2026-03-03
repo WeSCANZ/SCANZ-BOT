@@ -126,15 +126,18 @@ class RSIVerification(commands.Cog):
                     # handle both old column names
                     if has_org_handle:
                         cursor.execute(
-                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle) SELECT discord_id, rsi_handle, org_handle FROM rsi_links"
+                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle)"
+                            " SELECT discord_id, rsi_handle, org_handle FROM rsi_links"
                         )
                     elif has_org:
                         cursor.execute(
-                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle) SELECT discord_id, rsi_handle, COALESCE(org, 'SCANZ') FROM rsi_links"
+                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle)"
+                            " SELECT discord_id, rsi_handle, COALESCE(org, 'SCANZ') FROM rsi_links"
                         )
                     else:
                         cursor.execute(
-                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle) SELECT discord_id, rsi_handle, 'SCANZ' FROM rsi_links"
+                            "INSERT OR IGNORE INTO rsi_links_new(discord_id, rsi_handle, org_handle)"
+                            " SELECT discord_id, rsi_handle, 'SCANZ' FROM rsi_links"
                         )
                 # drop old table and rename
                 cursor.execute("DROP TABLE IF EXISTS rsi_links")
@@ -310,7 +313,8 @@ class RSIVerification(commands.Cog):
         existing_handle = self._is_verified(interaction.user.id, chosen_org)
         if existing_handle:
             await interaction.response.send_message(
-                f"You are already verified for {chosen_org} and linked to the RSI Handle **{existing_handle}**.",
+                f"You are already verified for {chosen_org} and linked to the RSI Handle "
+                f"**{existing_handle}**.",
                 ephemeral=True,
             )
             return
@@ -478,7 +482,8 @@ class RSIVerification(commands.Cog):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT discord_id, rsi_handle, org_handle FROM rsi_links WHERE rsi_handle LIKE ? OR discord_id = ?",
+                "SELECT discord_id, rsi_handle, org_handle FROM rsi_links"
+                " WHERE rsi_handle LIKE ? OR discord_id = ?",
                 (f"%{query}%", clean_query if clean_query.isdigit() else 0),
             )
             rows = cursor.fetchall()
