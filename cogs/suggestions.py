@@ -6,6 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils.checks import has_staff_or_admin
+
 
 class Suggestions(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -79,9 +81,9 @@ class Suggestions(commands.Cog):
             conn.commit()
 
     @app_commands.command(
-        name="set_suggestion_channel", description="Admin: Set the channel where suggestions will be sent."
+        name="set_suggestion_channel", description="Set the channel where suggestions will be sent."
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def set_suggestion_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Set the target channel for suggestions."""
         self._set_config(interaction.guild_id, channel.id)

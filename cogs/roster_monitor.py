@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from utils.checks import has_staff_or_admin
+
 
 async def org_autocomplete(interaction: discord.Interaction, current: str):
     bot = typing.cast(commands.Bot, interaction.client)
@@ -252,9 +254,9 @@ class RosterMonitor(commands.Cog):
             )
 
     @app_commands.command(
-        name="set_roster_channel", description="Admin: Set the channel for roster audit notifications."
+        name="set_roster_channel", description="Set the channel for roster audit notifications."
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def set_roster_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         self._set_config("roster_audit_channel", str(channel.id))
         await interaction.response.send_message(
@@ -263,9 +265,9 @@ class RosterMonitor(commands.Cog):
 
     @app_commands.command(
         name="roster_audit",
-        description="Admin: Manually trigger a check of all verified members' Org status.",
+        description="Manually trigger a check of all verified members' Org status.",
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def roster_audit(self, interaction: discord.Interaction):
         if not self.bot.get_cog("RSIVerification"):
             await interaction.response.send_message(
@@ -277,11 +279,11 @@ class RosterMonitor(commands.Cog):
 
     @app_commands.command(
         name="org_full_sync",
-        description="Admin: Sync one or all RSI Org rosters with the verification database.",
+        description="Sync one or all RSI Org rosters with the verification database.",
     )
     @app_commands.describe(org="The organisation symbol to sync (optional)")
     @app_commands.autocomplete(org=org_autocomplete)
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def org_full_sync(self, interaction: discord.Interaction, org: Optional[str] = None):
         """Perform a full synchronization check between RSI and Discord.
 
