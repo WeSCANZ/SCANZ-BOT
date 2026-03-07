@@ -11,6 +11,8 @@ from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands
 
+from utils.checks import has_staff_or_admin
+
 
 class VerifyNowView(discord.ui.View):
     def __init__(self, cog, handle: str, code: str, org: str | None = None):
@@ -343,10 +345,37 @@ class RSIVerification(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(
-        name="set_verified_role", description="Admin: Set the role granted upon successful RSI Verification."
+        name="set_staff_role",
+        description="Admin only: Set the role that can use staff commands (e.g. enforce, verify, suggestions).",
+    )
+    @app_commands.describe(role="The role that can use staff commands (e.g. Custodian).")
+    @app_commands.default_permissions(administrator=True)
+    async def set_staff_role(self, interaction: discord.Interaction, role: discord.Role):
+        """Set the staff role. Only users with Administrator can run this."""
+        self._set_config("staff_role_id", str(role.id))
+        await interaction.response.send_message(
+            f"✅ Staff role set to {role.mention}. Users with this role or Administrator can use staff commands.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="clear_staff_role",
+        description="Admin only: Clear the staff role so only Administrator can use staff commands.",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def clear_staff_role(self, interaction: discord.Interaction):
+        """Clear the staff role. Only users with Administrator can run this."""
+        self._set_config("staff_role_id", "")
+        await interaction.response.send_message(
+            "✅ Staff role cleared. Only users with Administrator can use staff commands.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="set_verified_role", description="Set the role granted upon successful RSI Verification."
     )
     @app_commands.describe(role="The role to grant verified users.")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def set_verified_role(self, interaction: discord.Interaction, role: discord.Role):
         self._set_config("verified_role_id", str(role.id))
         await interaction.response.send_message(
@@ -355,11 +384,11 @@ class RSIVerification(commands.Cog):
 
     @app_commands.command(
         name="manual_verify",
-        description="Admin: Manually initiate verification for a specific member.",
+        description="Manually initiate verification for a specific member.",
     )
     @app_commands.describe(member="The Discord member", handle="The RSI Handle to link")
     @app_commands.describe(org="Organisation symbol for this manual verification")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     @app_commands.autocomplete(org=org_autocomplete)
     async def manual_verify(
         self, interaction: discord.Interaction, member: discord.Member, handle: str, org: str = None
@@ -436,9 +465,9 @@ class RSIVerification(commands.Cog):
 
     @app_commands.command(
         name="export_verified",
-        description="Admin: Export the verification database to a CSV file.",
+        description="Export the verification database to a CSV file.",
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def export_verified(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -471,10 +500,10 @@ class RSIVerification(commands.Cog):
 
     @app_commands.command(
         name="search_verified",
-        description="Admin: Search for a verified member by Handle or Discord ID.",
+        description="Search for a verified member by Handle or Discord ID.",
     )
     @app_commands.describe(query="RSI Handle, Discord ID, or Mention")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def search_verified(self, interaction: discord.Interaction, query: str):
         # Cleanup query (mentions, etc)
         clean_query = query.replace("<@", "").replace(">", "").replace("!", "")
@@ -502,10 +531,10 @@ class RSIVerification(commands.Cog):
 
     @app_commands.command(
         name="grant_verified",
-        description="Admin: Manually grant the verified role and RSI nickname to a member.",
+        description="Manually grant the verified role and RSI nickname to a member.",
     )
     @app_commands.describe(member="The Discord member to grant the verified role to.")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def grant_verified(self, interaction: discord.Interaction, member: discord.Member):
         # allow grant to specify org? use any for now
         rsi_handle = self._is_verified(member.id)
@@ -573,9 +602,9 @@ class RSIVerification(commands.Cog):
                 pass
 
     # configuration commands
-    @app_commands.command(name="add_org", description="Admin: add an RSI organisation/affiliate symbol")
+    @app_commands.command(name="add_org", description="Add an RSI organisation/affiliate symbol")
     @app_commands.describe(symbol="The RSI org symbol, e.g. SCANZ")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def add_org(self, interaction: discord.Interaction, symbol: str):
         added = self._add_org(symbol)
         if added:
@@ -587,9 +616,9 @@ class RSIVerification(commands.Cog):
                 f"ℹ️ `{symbol.upper()}` is already configured.", ephemeral=True
             )
 
-    @app_commands.command(name="remove_org", description="Admin: remove an RSI organisation/affiliate symbol")
+    @app_commands.command(name="remove_org", description="Remove an RSI organisation/affiliate symbol")
     @app_commands.describe(symbol="The RSI org symbol to remove")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def remove_org(self, interaction: discord.Interaction, symbol: str):
         removed = self._remove_org(symbol)
         if removed:
@@ -612,19 +641,19 @@ class RSIVerification(commands.Cog):
             await interaction.response.send_message("No organisations have been added yet.", ephemeral=True)
 
     @app_commands.command(
-        name="set_scanz_role", description="Admin: set the role that identifies SCANZ members."
+        name="set_scanz_role", description="Set the role that identifies SCANZ members."
     )
     @app_commands.describe(role="Role that members should have to trigger verification checks")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def set_scanz_role(self, interaction: discord.Interaction, role: discord.Role):
         self._set_config("scanz_role_id", str(role.id))
         await interaction.response.send_message(f"✅ SCANZ role set to {role.mention}.", ephemeral=True)
 
     @app_commands.command(
-        name="set_needs_role", description="Admin: set role applied to users needing verification."
+        name="set_needs_role", description="Set role applied to users needing verification."
     )
     @app_commands.describe(role="Role to apply when a SCANZ member is not verified")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def set_needs_role(self, interaction: discord.Interaction, role: discord.Role):
         self._set_config("needs_role_id", str(role.id))
         await interaction.response.send_message(

@@ -67,47 +67,66 @@ class General(commands.Cog):
             name="`/verify`", value="Link your Discord to your RSI Handle using a bio checksum.", inline=False
         )
 
-        # Admin / Utility
+        # Staff/Admin (staff role or Administrator; set with /set_staff_role)
         embed.add_field(
-            name="`/setup_reaction_role`", value="Admin: Create a reaction role message.", inline=False
+            name="`/set_staff_role`",
+            value="Admin only: Set the role that can use staff commands (e.g. Custodian).",
+            inline=False,
         )
         embed.add_field(
-            name="`/enforce_channel`", value="Admin: Toggle strict message enforcement.", inline=False
+            name="`/clear_staff_role`",
+            value="Admin only: Clear staff role so only Administrator can use staff commands.",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/setup_reaction_role`", value="Manage Roles: Create a reaction role message.", inline=False
+        )
+        embed.add_field(
+            name="`/enforce_channel`", value="Staff: Toggle strict message enforcement.", inline=False
         )
         embed.add_field(
             name="`/scanz_format`",
-            value="Admin: Setup allowed Post Types/Game Loops for a channel.",
+            value="Staff: Setup allowed Post Types/Game Loops for a channel.",
             inline=False,
         )
         embed.add_field(
             name="`/set_ping_target`",
-            value="Admin: Map a channel to a specific category for `/ping`.",
+            value="Staff: Map a channel to a specific category for `/ping`.",
             inline=False,
         )
         embed.add_field(
             name="`/scanz_subscriptions`",
-            value="Admin: Post a persistent message to subscribe to ping roles.",
+            value="Staff: Post a persistent message to subscribe to ping roles.",
             inline=False,
         )
         embed.add_field(
             name="`/set_verified_role`",
-            value="Admin: Configure the role given to verified members.",
+            value="Staff: Configure the role given to verified members.",
             inline=False,
         )
         embed.add_field(
             name="`/grant_verified`",
-            value="Admin: Manually apply roles/nick to a verified user.",
+            value="Staff: Manually apply roles/nick to a verified user.",
             inline=False,
         )
         embed.add_field(
-            name="`/manual_verify`", value="Admin: Manually link a member to an RSI handle.", inline=False
+            name="`/manual_verify`", value="Staff: Manually link a member to an RSI handle.", inline=False
         )
         embed.add_field(
-            name="`/export_verified`", value="Admin: Export verification database to CSV.", inline=False
+            name="`/export_verified`", value="Staff: Export verification database to CSV.", inline=False
         )
-        embed.add_field(name="`/search_verified`", value="Admin: Search for a verified member.", inline=False)
+        embed.add_field(name="`/search_verified`", value="Staff: Search for a verified member.", inline=False)
         embed.add_field(
-            name="`/org_full_sync`", value="Admin: Sync RSI roster with bot database.", inline=False
+            name="`/org_full_sync`", value="Staff: Sync RSI roster with bot database.", inline=False
+        )
+        embed.add_field(
+            name="`/set_suggestion_channel`", value="Staff: Set channel where suggestions are sent.", inline=False
+        )
+        embed.add_field(
+            name="`/set_roster_channel`", value="Staff: Set channel for roster audit notifications.", inline=False
+        )
+        embed.add_field(
+            name="`/roster_audit`", value="Staff: Manually check verified members' Org status.", inline=False
         )
 
         # Enforcer Post

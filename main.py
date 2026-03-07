@@ -2,6 +2,7 @@ import os
 import subprocess
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -92,6 +93,25 @@ class ScanzBot(commands.Bot):
 
 
 bot = ScanzBot()
+
+
+@bot.tree.error
+async def on_tree_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    """Send a user-friendly message when a permission check fails."""
+    if isinstance(error, app_commands.CheckFailure):
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "You don't have permission to use this command.", ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "You don't have permission to use this command.", ephemeral=True
+                )
+        except discord.NotFound:
+            pass
+        return
+    raise error
 
 
 @bot.command()

@@ -8,6 +8,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils.checks import has_staff_or_admin
+
 
 def load_config():
     config_path = os.path.join("config", "enforcer_template.json")
@@ -261,9 +263,9 @@ class MessageEnforcer(commands.Cog):
 
     @app_commands.command(
         name="enforce_channel",
-        description="Admin: Toggle strict message enforcement for the current channel.",
+        description="Toggle strict message enforcement for the current channel.",
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def enforce_channel(self, interaction: discord.Interaction, enabled: bool):
         """Toggle strict message enforcement for the current channel."""
         self._set_enforced(interaction.channel_id, enabled)
@@ -274,9 +276,9 @@ class MessageEnforcer(commands.Cog):
         )
 
     @app_commands.command(
-        name="scanz_format", description="Admin: Interactive setup for the channel's enforced log format."
+        name="scanz_format", description="Interactive setup for the channel's enforced log format."
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def scanz_format(self, interaction: discord.Interaction):
         """Interactive command to start formatting a channel."""
         if not self._is_enforced(interaction.channel_id):
@@ -292,9 +294,9 @@ class MessageEnforcer(commands.Cog):
         )
 
     @app_commands.command(
-        name="set_ping_target", description="Admin: Set a default target channel for pings."
+        name="set_ping_target", description="Set a default target channel for pings."
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def set_ping_target(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Set a default target channel for pings."""
         self._set_post_target("Ping", channel.id)
@@ -304,9 +306,9 @@ class MessageEnforcer(commands.Cog):
 
     @app_commands.command(
         name="scanz_subscriptions",
-        description="Admin: Post the role subscription message in the current channel.",
+        description="Post the role subscription message in the current channel.",
     )
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(has_staff_or_admin)
     async def scanz_subscriptions(self, interaction: discord.Interaction):
         """Post the role subscription message."""
         embed = discord.Embed(
