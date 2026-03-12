@@ -12,10 +12,12 @@ class General(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="latency", description="Checks the bot's global latency.")
-    async def ping(self, interaction: discord.Interaction):
+    async def latency(self, interaction: discord.Interaction):
         latency = round(self.bot.latency * 1000)
         embed = discord.Embed(
-            title="🏓 Pong!", description=f"**WebSocket Latency:** `{latency}ms`", color=discord.Color.green()
+            title="🏓 Pong!",
+            description=f"**WebSocket Latency:** `{latency}ms`",
+            color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=embed)
 
@@ -53,113 +55,84 @@ class General(commands.Cog):
 
     @app_commands.command(name="scanz_commands", description="Lists all available SCANZ-BOT commands.")
     async def scanz_commands(self, interaction: discord.Interaction):
-        embed = discord.Embed(
+        # Discord enforces a max of 25 fields per embed — split across two embeds.
+
+        # ----- Embed 1: Everyone Commands (8 fields) -----
+        embed1 = discord.Embed(
             title="SCANZ-BOT Command Guide",
-            description="Here is a list of all available commands:",
+            description="**All Members**",
             color=discord.Color.gold(),
         )
-
-        # ----- All Users (Everyone) -----
-        # General & Utility
-        embed.add_field(name="`/hi`", value="Says hello with a personalized message.", inline=False)
-        embed.add_field(name="`/latency`", value="Checks the bot's global latency.", inline=False)
-        embed.add_field(name="`/time`", value="Displays current time across SCANZ timezones.", inline=False)
-        embed.add_field(name="`/scanz_commands`", value="Lists all available commands.", inline=False)
-        embed.add_field(name="`/suggestion`", value="Submit a suggestion to the SCANZ team.", inline=False)
-
-        # SC Tools & Org Info
-        embed.add_field(
+        embed1.add_field(name="`/hi`", value="Says hello with a personalized message.", inline=False)
+        embed1.add_field(name="`/latency`", value="Checks the bot's WebSocket latency.", inline=False)
+        embed1.add_field(name="`/time`", value="Displays current time across SCANZ timezones.", inline=False)
+        embed1.add_field(name="`/scanz_commands`", value="Lists all available commands.", inline=False)
+        embed1.add_field(name="`/suggestion`", value="Submit a suggestion to the SCANZ team.", inline=False)
+        embed1.add_field(
             name="`/verify`", value="Link your Discord to your RSI Handle using a bio checksum.", inline=False
         )
-        embed.add_field(name="`/list_orgs`", value="Displays configured organisations.", inline=False)
-
-        # Enforcer Post (Ping)
-        embed.add_field(
+        embed1.add_field(name="`/list_orgs`", value="Displays configured organisations.", inline=False)
+        embed1.add_field(
             name="`/ping`",
-            value="Create a formatted Event/Announcement post (mentions @SCANZ).",
+            value="Create a formatted alert/ping post (mentions @SCANZ).",
             inline=False,
         )
 
-        # ----- Admin & Officer Commands (Staff) -----
-        embed.add_field(
-            name="--- STAFF COMMANDS ---", value="Requires Staff Role or Administrator", inline=False
+        # ----- Embed 2: Staff & Admin Commands (23 fields) -----
+        embed2 = discord.Embed(
+            description="**Staff** *(Requires Staff Role or Administrator)*",
+            color=discord.Color.orange(),
         )
+        embed2.add_field(name="`/enforce_channel`", value="Toggle strict message enforcement.", inline=False)
+        embed2.add_field(
+            name="`/scanz_format`", value="Setup allowed Game Loops for a channel.", inline=False
+        )
+        embed2.add_field(
+            name="`/set_ping_target`", value="Set the default channel for `/ping`.", inline=False
+        )
+        embed2.add_field(
+            name="`/scanz_subscriptions`", value="Post the ping role subscription message.", inline=False
+        )
+        embed2.add_field(name="`/set_suggestion_channel`", value="Set channel for suggestions.", inline=False)
+        embed2.add_field(name="`/setup_reaction_role`", value="Create a reaction role message.", inline=False)
+        embed2.add_field(name="`/set_main_role`", value="Configure the Main Org member role.", inline=False)
+        embed2.add_field(
+            name="`/set_affiliate_role`", value="Configure the Affiliate member role.", inline=False
+        )
+        embed2.add_field(name="`/set_guest_role`", value="Configure the Honored Guest role.", inline=False)
+        embed2.add_field(
+            name="`/set_unverified_role`", value="Configure the Needs Verification role.", inline=False
+        )
+        embed2.add_field(name="`/set_scanz_role`", value="Configure the SCANZ identifier role.", inline=False)
+        embed2.add_field(name="`/add_org` / `/remove_org`", value="Manage RSI org symbols.", inline=False)
+        embed2.add_field(
+            name="`/grant_verified`", value="Manually apply verified role to a member.", inline=False
+        )
+        embed2.add_field(
+            name="`/manual_verify`", value="Manually link a member to an RSI handle.", inline=False
+        )
+        embed2.add_field(name="`/search_verified`", value="Search for a verified member.", inline=False)
+        embed2.add_field(
+            name="`/export_verified`", value="Export verification database to CSV.", inline=False
+        )
+        embed2.add_field(name="`/export_unverified`", value="Export unverified members to CSV.", inline=False)
+        embed2.add_field(
+            name="`/set_roster_channel`", value="Set channel for roster audit reports.", inline=False
+        )
+        embed2.add_field(
+            name="`/roster_audit`", value="Trigger a check of all verified members.", inline=False
+        )
+        embed2.add_field(
+            name="`/org_full_sync`", value="Sync RSI org roster with the bot database.", inline=False
+        )
+        embed2.add_field(name="— ADMIN ONLY —", value="*Requires Administrator permission*", inline=False)
+        embed2.add_field(
+            name="`/set_staff_role`", value="Set the role that can use staff commands.", inline=False
+        )
+        embed2.add_field(name="`/clear_staff_role`", value="Clear the staff role (Admin only).", inline=False)
+        embed2.set_footer(text="For full argument details, type the command or check COMMANDS.md.")
 
-        # Enforcement & Channels
-        embed.add_field(
-            name="`/enforce_channel`", value="Staff: Toggle strict message enforcement.", inline=False
-        )
-        embed.add_field(
-            name="`/scanz_format`", value="Staff: Setup allowed Post Types for a channel.", inline=False
-        )
-        embed.add_field(
-            name="`/set_ping_target`", value="Staff: Map a channel to a category for `/ping`.", inline=False
-        )
-        embed.add_field(
-            name="`/scanz_subscriptions`", value="Staff: Post a ping role subscription message.", inline=False
-        )
-        embed.add_field(
-            name="`/set_suggestion_channel`", value="Staff: Set channel for suggestions.", inline=False
-        )
-        embed.add_field(
-            name="`/setup_reaction_role`", value="Manage Roles: Create a reaction role message.", inline=False
-        )
-
-        # Verification Mgmt
-        embed.add_field(
-            name="`/set_main_role`", value="Staff: Configure the Main Org member role.", inline=False
-        )
-        embed.add_field(
-            name="`/set_affiliate_role`", value="Staff: Configure the Affiliate member role.", inline=False
-        )
-        embed.add_field(
-            name="`/set_guest_role`", value="Staff: Configure the Honored Guest role.", inline=False
-        )
-        embed.add_field(
-            name="`/set_unverified_role`",
-            value="Staff: Configure role for users needing verification.",
-            inline=False,
-        )
-        embed.add_field(
-            name="`/set_scanz_role`",
-            value="Staff: Configure an optional filter role for unverified members.",
-            inline=False,
-        )
-        embed.add_field(
-            name="`/add_org` / `/remove_org`", value="Staff: Manage RSI org symbols.", inline=False
-        )
-        embed.add_field(
-            name="`/grant_verified`", value="Staff: Manually apply roles/nick to user.", inline=False
-        )
-        embed.add_field(
-            name="`/manual_verify`", value="Staff: Manually link a member to RSI handle.", inline=False
-        )
-        embed.add_field(name="`/search_verified`", value="Staff: Search for a verified member.", inline=False)
-        embed.add_field(name="`/export_verified`", value="Staff: Export verification database.", inline=False)
-
-        # Roster Monitor
-        embed.add_field(
-            name="`/set_roster_channel`", value="Staff: Set channel for roster audits.", inline=False
-        )
-        embed.add_field(
-            name="`/roster_audit`", value="Staff: Trigger check of verified members.", inline=False
-        )
-        embed.add_field(name="`/org_full_sync`", value="Staff: Sync RSI roster with bot DB.", inline=False)
-
-        # ----- Administrator -----
-        embed.add_field(name="--- ADMIN ONLY ---", value="Requires Administrator Permission", inline=False)
-        embed.add_field(
-            name="`/set_staff_role`", value="Admin: Set role that can use staff commands.", inline=False
-        )
-        embed.add_field(
-            name="`/clear_staff_role`", value="Admin: Clear staff role (only Admin can use).", inline=False
-        )
-        embed.add_field(
-            name="`!sync`", value="Admin: Force instant slash command update for this server.", inline=False
-        )
-
-        embed.set_footer(text="To see full argument details, type the command or check COMMANDS.md.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embeds=[embed1, embed2], ephemeral=True)
 
 
 async def setup(bot):
