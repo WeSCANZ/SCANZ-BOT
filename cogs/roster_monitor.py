@@ -37,7 +37,7 @@ class RosterMonitor(commands.Cog):
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT discord_id, rsi_handle, org_handle FROM rsi_links")
+                cursor.execute("SELECT discord_id, rsi_handle, org_handle, org_status FROM rsi_links")
                 return cursor.fetchall()
         except sqlite3.OperationalError:
             print("[RosterMonitor] Error: rsi_links table not found.")
@@ -200,16 +200,36 @@ class RosterMonitor(commands.Cog):
 
         audit_results = []
         # loop through each stored entry; entries include org value
-        for discord_id, handle, org in verified_members:
-            # sync discord roles if possible
+        for discord_id, handle, org, current_status in verified_members:
             cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
-            member = target_channel.guild.get_member(discord_id)
-            if member and cog:
-                await cog.sync_member_roles(member)
+            
+            # Scrape new status via the new _check_org_status logic in verification cog
+            new_status = "None"
+            if cog:
+                new_status = await cog._check_org_status(handle, org)
+            
+            # Did their status change?
+            if new_status and new_status != current_status:
+                try:
+                    with sqlite3.connect(self.db_path) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE rsi_links SET org_status = ? WHERE discord_id = ?",
+                            (new_status, discord_id)
+                        )
+                        conn.commit()
+                except Exception as e:
+                    print(f"Failed to update org_status for {discord_id}: {e}")
 
-            is_member, status = await self._check_org_membership(handle, org)
-            if not is_member:
-                audit_results.append((discord_id, handle, org, status))
+                audit_results.append((
+                    discord_id, handle, org, f"Status changed: {current_status} -> {new_status}"
+                ))
+
+                # Re-sync their roles now that DB is updated
+                member = target_channel.guild.get_member(discord_id)
+                if member and cog:
+                    await cog.sync_member_roles(member)
+
             await asyncio.sleep(2)
 
         if not audit_results:
@@ -243,7 +263,7 @@ class RosterMonitor(commands.Cog):
             if anomalies_str:
                 embed.add_field(name="Anomaly List", value=anomalies_str, inline=False)
 
-            admin_role_id = self._get_config("verified_role_id")
+            admin_role_id = self._get_config("main_role_id")
             content = f"<@&{admin_role_id}> Roster audit complete." if admin_role_id else None
 
             await target_channel.send(content=content, embed=embed)
