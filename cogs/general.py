@@ -11,17 +11,28 @@ class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="hi", help="Says hello with a random verbose message.")
-    async def hi(self, ctx):
-        responses = [
-            "Greetings, starfarer! I hope your travels through the verse have been profitable and safe.",
-            "Hello there! I am the SCANZ Bot, at your service. How may I assist you today?",
-            "Top of the morning to you! Or evening, depending on which planet you're orbiting.",
-        ]
-        await ctx.send(random.choice(responses))
+    @app_commands.command(name="latency", description="Checks the bot's global latency.")
+    async def ping(self, interaction: discord.Interaction):
+        latency = round(self.bot.latency * 1000)
+        embed = discord.Embed(
+            title="🏓 Pong!", description=f"**WebSocket Latency:** `{latency}ms`", color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
 
-    @commands.command(name="time", help="Displays current time across SCANZ timezones.")
-    async def time(self, ctx):
+    @app_commands.command(name="hi", description="Says hello with a random, personalized message.")
+    async def hi(self, interaction: discord.Interaction):
+        user_name = interaction.user.display_name
+        responses = [
+            f"Greetings, {user_name}! I hope your travels through the verse have been profitable and safe.",
+            f"Hello there, {user_name}! I am the SCANZ Bot, at your service. How may I assist you today?",
+            f"Top of the morning to you, {user_name}! Or evening, depending on which planet you're orbiting.",
+            f"o7 {user_name}! Ready for deployment?",
+            f"Aha! {user_name} approaches. The scanners didn't pick you up until just now!",
+        ]
+        await interaction.response.send_message(random.choice(responses))
+
+    @app_commands.command(name="time", description="Displays current time across SCANZ timezones.")
+    async def time(self, interaction: discord.Interaction):
         zones = {
             "Indochina (ICT)": "Asia/Bangkok",
             "Perth (AWST)": "Australia/Perth",
@@ -38,7 +49,7 @@ class General(commands.Cog):
             local_time = now_utc.astimezone(tz)
             embed.add_field(name=name, value=local_time.strftime("**%I:%M %p**\n%a, %b %d"), inline=True)
 
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="scanz_commands", description="Lists all available SCANZ-BOT commands.")
     async def scanz_commands(self, interaction: discord.Interaction):
@@ -48,98 +59,106 @@ class General(commands.Cog):
             color=discord.Color.gold(),
         )
 
-        # General/Utility
-        embed.add_field(name="`!hi`", value="Says hello with a random message.", inline=False)
-        embed.add_field(name="`!ping`", value="Checks if the bot is responsive.", inline=False)
-        embed.add_field(name="`!time`", value="Displays current time across SCANZ timezones.", inline=False)
-        embed.add_field(
-            name="`!sync`", value="Admin: Force instant slash command update for this server.", inline=False
-        )
+        # ----- All Users (Everyone) -----
+        # General & Utility
+        embed.add_field(name="`/hi`", value="Says hello with a personalized message.", inline=False)
+        embed.add_field(name="`/latency`", value="Checks the bot's global latency.", inline=False)
+        embed.add_field(name="`/time`", value="Displays current time across SCANZ timezones.", inline=False)
         embed.add_field(name="`/scanz_commands`", value="Lists all available commands.", inline=False)
+        embed.add_field(name="`/suggestion`", value="Submit a suggestion to the SCANZ team.", inline=False)
 
-        # SC Tools
-        embed.add_field(name="`!status`", value="Fetches current Star Citizen server status.", inline=False)
-        embed.add_field(
-            name="`!wiki [term]`", value="Generates a search link for the Star Citizen Wiki.", inline=False
-        )
-        embed.add_field(name="`!org`", value="Displays information and links for SCANZ.", inline=False)
+        # SC Tools & Org Info
         embed.add_field(
             name="`/verify`", value="Link your Discord to your RSI Handle using a bio checksum.", inline=False
         )
+        embed.add_field(name="`/list_orgs`", value="Displays configured organisations.", inline=False)
 
-        # Staff/Admin (staff role or Administrator; set with /set_staff_role)
+        # Enforcer Post (Ping)
         embed.add_field(
-            name="`/set_staff_role`",
-            value="Admin only: Set the role that can use staff commands (e.g. Custodian).",
+            name="`/ping`",
+            value="Create a formatted Event/Announcement post (mentions @SCANZ).",
             inline=False,
         )
+
+        # ----- Admin & Officer Commands (Staff) -----
         embed.add_field(
-            name="`/clear_staff_role`",
-            value="Admin only: Clear staff role so only Administrator can use staff commands.",
-            inline=False,
+            name="--- STAFF COMMANDS ---", value="Requires Staff Role or Administrator", inline=False
         )
-        embed.add_field(
-            name="`/setup_reaction_role`", value="Manage Roles: Create a reaction role message.", inline=False
-        )
+
+        # Enforcement & Channels
         embed.add_field(
             name="`/enforce_channel`", value="Staff: Toggle strict message enforcement.", inline=False
         )
         embed.add_field(
-            name="`/scanz_format`",
-            value="Staff: Setup allowed Post Types/Game Loops for a channel.",
+            name="`/scanz_format`", value="Staff: Setup allowed Post Types for a channel.", inline=False
+        )
+        embed.add_field(
+            name="`/set_ping_target`", value="Staff: Map a channel to a category for `/ping`.", inline=False
+        )
+        embed.add_field(
+            name="`/scanz_subscriptions`", value="Staff: Post a ping role subscription message.", inline=False
+        )
+        embed.add_field(
+            name="`/set_suggestion_channel`", value="Staff: Set channel for suggestions.", inline=False
+        )
+        embed.add_field(
+            name="`/setup_reaction_role`", value="Manage Roles: Create a reaction role message.", inline=False
+        )
+
+        # Verification Mgmt
+        embed.add_field(
+            name="`/set_main_role`", value="Staff: Configure the Main Org member role.", inline=False
+        )
+        embed.add_field(
+            name="`/set_affiliate_role`", value="Staff: Configure the Affiliate member role.", inline=False
+        )
+        embed.add_field(
+            name="`/set_guest_role`", value="Staff: Configure the Honored Guest role.", inline=False
+        )
+        embed.add_field(
+            name="`/set_unverified_role`",
+            value="Staff: Configure role for users needing verification.",
             inline=False,
         )
         embed.add_field(
-            name="`/set_ping_target`",
-            value="Staff: Map a channel to a specific category for `/ping`.",
+            name="`/set_scanz_role`",
+            value="Staff: Configure an optional filter role for unverified members.",
             inline=False,
         )
         embed.add_field(
-            name="`/scanz_subscriptions`",
-            value="Staff: Post a persistent message to subscribe to ping roles.",
-            inline=False,
+            name="`/add_org` / `/remove_org`", value="Staff: Manage RSI org symbols.", inline=False
         )
         embed.add_field(
-            name="`/set_verified_role`",
-            value="Staff: Configure the role given to verified members.",
-            inline=False,
+            name="`/grant_verified`", value="Staff: Manually apply roles/nick to user.", inline=False
         )
         embed.add_field(
-            name="`/grant_verified`",
-            value="Staff: Manually apply roles/nick to a verified user.",
-            inline=False,
-        )
-        embed.add_field(
-            name="`/manual_verify`", value="Staff: Manually link a member to an RSI handle.", inline=False
-        )
-        embed.add_field(
-            name="`/export_verified`", value="Staff: Export verification database to CSV.", inline=False
+            name="`/manual_verify`", value="Staff: Manually link a member to RSI handle.", inline=False
         )
         embed.add_field(name="`/search_verified`", value="Staff: Search for a verified member.", inline=False)
+        embed.add_field(name="`/export_verified`", value="Staff: Export verification database.", inline=False)
+
+        # Roster Monitor
         embed.add_field(
-            name="`/org_full_sync`", value="Staff: Sync RSI roster with bot database.", inline=False
+            name="`/set_roster_channel`", value="Staff: Set channel for roster audits.", inline=False
         )
         embed.add_field(
-            name="`/set_suggestion_channel`", value="Staff: Set channel where suggestions are sent.", inline=False
+            name="`/roster_audit`", value="Staff: Trigger check of verified members.", inline=False
+        )
+        embed.add_field(name="`/org_full_sync`", value="Staff: Sync RSI roster with bot DB.", inline=False)
+
+        # ----- Administrator -----
+        embed.add_field(name="--- ADMIN ONLY ---", value="Requires Administrator Permission", inline=False)
+        embed.add_field(
+            name="`/set_staff_role`", value="Admin: Set role that can use staff commands.", inline=False
         )
         embed.add_field(
-            name="`/set_roster_channel`", value="Staff: Set channel for roster audit notifications.", inline=False
+            name="`/clear_staff_role`", value="Admin: Clear staff role (only Admin can use).", inline=False
         )
         embed.add_field(
-            name="`/roster_audit`", value="Staff: Manually check verified members' Org status.", inline=False
+            name="`!sync`", value="Admin: Force instant slash command update for this server.", inline=False
         )
 
-        # Enforcer Post
-        embed.add_field(
-            name="`/ping`",
-            value=(
-                "Create a formatted Event/Ping/Announcement post (mentions @SCANZ). "
-                "Used in enforced/targeted channels."
-            ),
-            inline=False,
-        )
-
-        embed.set_footer(text="To see full argument details, type the command or check our docs.")
+        embed.set_footer(text="To see full argument details, type the command or check COMMANDS.md.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

@@ -114,10 +114,6 @@ async def on_tree_error(interaction: discord.Interaction, error: app_commands.Ap
     raise error
 
 
-@bot.command()
-async def ping(ctx):
-    await ctx.send("Pong!")
-
 
 if __name__ == "__main__":
     if not TOKEN:
