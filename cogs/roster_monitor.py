@@ -10,16 +10,8 @@ from bs4 import BeautifulSoup
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from cogs.verification import org_autocomplete
 from utils.checks import has_staff_or_admin
-
-
-async def org_autocomplete(interaction: discord.Interaction, current: str):
-    bot = typing.cast(commands.Bot, interaction.client)
-    cog = typing.cast(typing.Any, bot.get_cog("RSIVerification"))
-    if not cog:
-        return []
-    orgs = cog._get_orgs()
-    return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
 
 
 class RosterMonitor(commands.Cog):
@@ -202,12 +194,12 @@ class RosterMonitor(commands.Cog):
         # loop through each stored entry; entries include org value
         for discord_id, handle, org, current_status in verified_members:
             cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
-            
+
             # Scrape new status via the new _check_org_status logic in verification cog
             new_status = "None"
             if cog:
                 new_status = await cog._check_org_status(handle, org)
-            
+
             # Did their status change?
             if new_status and new_status != current_status:
                 try:
@@ -215,15 +207,15 @@ class RosterMonitor(commands.Cog):
                         cursor = conn.cursor()
                         cursor.execute(
                             "UPDATE rsi_links SET org_status = ? WHERE discord_id = ?",
-                            (new_status, discord_id)
+                            (new_status, discord_id),
                         )
                         conn.commit()
                 except Exception as e:
                     print(f"Failed to update org_status for {discord_id}: {e}")
 
-                audit_results.append((
-                    discord_id, handle, org, f"Status changed: {current_status} -> {new_status}"
-                ))
+                audit_results.append(
+                    (discord_id, handle, org, f"Status changed: {current_status} -> {new_status}")
+                )
 
                 # Re-sync their roles now that DB is updated
                 member = target_channel.guild.get_member(discord_id)

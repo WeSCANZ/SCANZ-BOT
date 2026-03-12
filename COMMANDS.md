@@ -1,79 +1,108 @@
 # SCANZ-BOT Command Guide
 
-This document lists all available commands for the SCANZ-BOT, organized by who has permission to use them.
+This document lists all available slash commands for the SCANZ-BOT.
 
-## Permission Levels
-
-- **All Users (Everyone)** – Any member can use the command.
-- **Admin / Officer (Staff)** – User must have the **Staff role** (configured via `/set_staff_role`) **or** *Administrator*. Used for managing the bot's core features.
-- **Administrator** – User must have the *Administrator* permission. Used to configure the staff role itself.
-- **Manage Roles** – User must have the *Manage Roles* permission (or Administrator).
+> **Permission levels:**
+> - **Everyone** — Any server member.
+> - **Staff or Admin** — Members with the configured staff role OR Administrator permission.
+> - **Admin only** — Requires the Discord *Administrator* permission.
 
 ---
 
-## 1. All Users (Everyone) 
+## General & Utility
 
-These commands are available for any server member to use.
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/hi` | Says hello with a random, personalised message. | Everyone |
+| `/latency` | Checks the bot's WebSocket latency. | Everyone |
+| `/time` | Displays current time across SCANZ timezones (ICT, AWST, AET, NZT). | Everyone |
+| `/scanz_commands` | Shows a full list of available commands in an ephemeral embed. | Everyone |
 
-### Utility & Fun
-- `**/hi**`: Says hello with a random, personalized message.
-- `**/time**`: Displays the current time across major SCANZ timezones.
-- `**/ping**`: Checks the bot's global latency and connection speed.
-- `**@SCANZ_BOT [message]**`: the bot will intelligently reply to keyword mentions or provide witty responses.
-- `**/scanz_commands**`: Lists all available commands for the bot directly in an ephemeral Discord embed.
-
-
-
-### Verification & Organization
-- `**/verify**`: Link your Discord account to your RSI Handle using a unique bio checksum. optionally specify `org: [ORG]`.
-- `**/list_orgs**`: Displays the currently configured organisation symbols for verification.
-
-### Feedback & Pings
-- `**/ping**`: Creates a formatted alert/ping (Event/Announcement) and automatically pings the `@SCANZ` role. Usage: `/ping game_loop:"Org Event" description:"QV RUN IN NYX"`
-- `**/suggestion**`: Submit feedback or an idea to the staff. Set `anonymous:True` to hide your username.
+**`@SCANZ_BOT` mentions** — Mentioning the bot in any channel triggers keyword-aware responses (e.g. `website`, `discord`, `org`, `help`) with fallback witty replies.
 
 ---
 
-## 2. Admin & Officer Commands (Staff)
+## Suggestions
 
-These commands require the user to have the designated Staff role or server wide Administrator permissions.
-
-### Message Enforcement & Channels
-- `**/enforce_channel**`: Toggle strict message enforcement (Event/Ping format only) for the current channel.
-- `**/scanz_format**`: Interactively set the allowed "Post Types" and "Game Loops" for an enforced channel.
-- `**/set_ping_target**`: Set the default target channel for ping posts.
-- `**/scanz_subscriptions**`: Post a persistent message to a channel with buttons for members to subscribe/unsubscribe from ping roles.
-- `**/set_suggestion_channel**`: Set the destination channel for suggestions submitted via `/suggestion`.
-
-### Verification Management
-- `**/add_org**`: Add an RSI organisation or affiliate symbol to the configuration.
-- `**/remove_org**`: Remove an organisation symbol from the configuration.
-- `**/set_main_role**`: Set the role granted to verified Main Org members.
-- `**/set_affiliate_role**`: Set the role granted to verified Affiliate members.
-- `**/set_guest_role**`: Set the role granted to verified Honored Guests (non-org).
-- `**/set_unverified_role**`: Set the role applied to users needing verification (unlinked RSI).
-- `**/set_scanz_role**`: Configure an optional filter role for checking who should be verified.
-- `**/grant_verified**`: Manually apply the correct roles/nicknames based on a user's verification state.
-- `**/manual_verify**`: Manually initiate the verification process for a member and an RSI handle (generates a checksum challenge).
-- `**/search_verified**`: Search for a verified member by handle, Discord ID, or mention.
-- `**/export_verified**`: Export the entire verification database as a CSV file.
-
-### Roster Monitoring
-- `**/set_roster_channel**`: Set the destination channel for weekly roster audit reports.
-- `**/roster_audit**`: Manually trigger a check of all verified members to ensure they are still active in their configured RSI organisation.
-- `**/org_full_sync**`: Perform a comprehensive sync between an RSI organisation roster and the bot's verification database to find discrepancies.
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/suggestion text: [anonymous:]` | Submit feedback or an idea to staff. Set `anonymous:True` to hide your name. | Everyone |
+| `/set_suggestion_channel channel:` | Set the destination channel for incoming suggestions. | Staff or Admin |
 
 ---
 
-## 3. Administrator / Specialized Commands
+## Message Enforcer & Pings
 
-These commands require strict server permissions (Administrator or Manage Roles).
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/ping game_loop: description: [time:] [location:] [requirements:] [link:] [channel:]` | Create a formatted alert/ping. Automatically mentions `@SCANZ`. Posts to the configured ping channel or the specified `channel`. | Everyone |
+| `/enforce_channel enabled:` | Toggle strict message enforcement for the current channel. When enabled, non-bot messages are deleted and the author is DM-warned. | Staff or Admin |
+| `/scanz_format` | Interactive setup for a channel's allowed Game Loops. Posts an informational embed on save. Channel must be enforced first. | Staff or Admin |
+| `/set_ping_target channel:` | Set the default destination channel for `/ping` posts. | Staff or Admin |
+| `/scanz_subscriptions` | Post a persistent role-subscription message with toggle buttons. | Staff or Admin |
 
-- `**/set_staff_role**`: *(Administrator Only)* Set the role that can use all Staff commands (e.g. Officer / Custodian). 
-- `**/clear_staff_role**`: *(Administrator Only)* Clear the staff role so that only users with Administrator can use Staff commands.
-- `**/setup_reaction_role**`: *(Manage Roles)* Creates a message with a specific reaction that assigns a role when clicked. Usage: `/setup_reaction_role role:@Role emoji:👍 message:"Click!"`.
+---
+
+## RSI Verification
+
+### Member Commands
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/verify handle: [org:]` | Link your Discord account to your RSI Handle via a bio checksum challenge. Autocomplete available for `org`. | Everyone |
+| `/list_orgs` | List all configured RSI organisation/affiliate symbols. | Everyone |
+
+### Staff Commands
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/manual_verify member: handle: [org:]` | Initiate a checksum verification on behalf of a member. | Staff or Admin |
+| `/grant_verified member:` | Manually apply the correct verified role to an already-linked member. | Staff or Admin |
+| `/search_verified query:` | Search the verification database by RSI handle, Discord ID, or mention. | Staff or Admin |
+| `/export_verified` | Export all verified members to a CSV file. | Staff or Admin |
+| `/export_unverified [role:]` | Export members without a verification link to a CSV file. Optionally filter by role. | Staff or Admin |
+| `/add_org symbol:` | Add an RSI organisation or affiliate symbol to the configuration. | Staff or Admin |
+| `/remove_org symbol:` | Remove an RSI organisation or affiliate symbol. | Staff or Admin |
+
+### Role Configuration
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/set_main_role role:` | Set the role granted to verified **Main Org** members. | Staff or Admin |
+| `/set_affiliate_role role:` | Set the role granted to verified **Affiliate** members. | Staff or Admin |
+| `/set_guest_role role:` | Set the role granted to verified **Honored Guests** (non-org verified users). | Staff or Admin |
+| `/set_unverified_role role:` | Set the role applied to unverified members (e.g. *Needs Verification*). | Staff or Admin |
+| `/set_scanz_role role:` | Set the optional "SCANZ identifier" role used to scope unverified checks. | Staff or Admin |
+
+### Admin-Only Configuration
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/set_staff_role role:` | Set the role that can use all staff commands. | Admin only |
+| `/clear_staff_role` | Clear the staff role so only Administrators can use staff commands. | Admin only |
+
+---
+
+## Roster Monitor
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/set_roster_channel channel:` | Set the destination channel for roster audit reports. | Staff or Admin |
+| `/roster_audit` | Manually trigger an audit of all verified members' RSI org membership status. Results posted to the audit channel. | Staff or Admin |
+| `/org_full_sync [org:]` | Compare one or all RSI org rosters against the verification database. Lists RSI members not yet linked. | Staff or Admin |
+
+> Roster audits also run automatically on a **weekly background loop**.
+
+---
+
+## Reaction Roles
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/setup_reaction_role role: emoji: message:` | Post an embed with a reaction that grants/removes `role` when clicked. | Admin only (Manage Roles) |
 
 ---
 
 ## Automated Notifications
-- **Reboot & Update Alerts**: The bot automatically sends a notification to the designated log channel whenever it reboots or is updated, showing the current git branch and latest commit message. (Requires `LOG_CHANNEL_ID` in `.env`).
+
+- **Reboot & Update Alerts** — On startup, the bot sends a message to the channel specified by `LOG_CHANNEL_ID` in `.env`, showing the current git branch and latest commit message.
