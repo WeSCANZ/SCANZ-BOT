@@ -150,12 +150,14 @@ class RSIVerification(commands.Cog):
                 cursor.execute("DROP TABLE IF EXISTS rsi_links")
                 cursor.execute("ALTER TABLE rsi_links_new RENAME TO rsi_links")
 
-            # Add org_status column if it doesn't exist
+            # Add org_status and org_rank columns if they don't exist
             cursor.execute("PRAGMA table_info(rsi_links)")
             cols = cursor.fetchall()
             col_names = [c[1] for c in cols]
             if "org_status" not in col_names:
                 cursor.execute("ALTER TABLE rsi_links ADD COLUMN org_status TEXT DEFAULT 'None'")
+            if "org_rank" not in col_names:
+                cursor.execute("ALTER TABLE rsi_links ADD COLUMN org_rank TEXT DEFAULT 'None'")
             conn.commit()
 
     def _set_config(self, key: str, value: str):
@@ -234,7 +236,9 @@ class RSIVerification(commands.Cog):
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def _link_account(self, discord_id: int, handle: str, org: str = None, org_status: str = "None"):
+    def _link_account(
+        self, discord_id: int, handle: str, org: str = None, org_status: str = "None", org_rank: str = "None"
+    ):
         # pick a default org if none supplied
         if not org:
             orgs = self._get_orgs()
@@ -243,10 +247,10 @@ class RSIVerification(commands.Cog):
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle, org_handle, org_status)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle, org_handle, org_status, org_rank)
+                VALUES (?, ?, ?, ?, ?)
             """,
-                (discord_id, handle, org, org_status),
+                (discord_id, handle, org, org_status, org_rank),
             )
             conn.commit()
 
@@ -282,40 +286,61 @@ class RSIVerification(commands.Cog):
                         )
 
                     # Extract main org if code is found
-                    org_link = soup.select_one(".main-org .info .entry .value a")
-                    org = org_link.text.strip() if org_link else None
+                    org_link = soup.select_one(".main-org .info .entry a.value")
+                    org = ""
+                    if org_link and "href" in org_link.attrs:
+                        href = org_link["href"]
+                        if isinstance(href, str):
+                            org = href.split("/")[-1].upper()
+                    if not org:
+                        org = None
 
                     return True, {"message": "Code successfully validated against the bio!", "org": org}
 
             except Exception as e:
                 return False, f"Scraping error: {str(e)}"
 
-    async def _check_org_status(self, handle: str, target_org: str) -> str:
-        """Return 'Main', 'Affiliate', 'None', or 'Error' based on the RSI profile."""
+    async def _check_org_status(self, handle: str, target_org: str) -> tuple[str, str]:
+        """Return (status, rank) based on the RSI profile.
+        Status is 'Main', 'Affiliate', 'None', or 'Error'.
+        Rank is the organization rank string or 'None'/'Error'.
+        """
         url_main = f"https://robertsspaceindustries.com/citizens/{handle}"
         url_orgs = f"https://robertsspaceindustries.com/citizens/{handle}/organizations"
-        
+
         # If no target org is provided, we default to no relationship.
         if not target_org:
-            return "None"
-            
+            return "None", "None"
+
         async with aiohttp.ClientSession() as session:
             try:
                 # 1. Check Main Org
                 async with session.get(url_main) as response:
                     if response.status == 404:
-                        return "None"
+                        return "None", "None"
                     elif response.status != 200:
-                        return "Error"
-                    
+                        return "Error", "Error"
+
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
-                    org_link = soup.select_one(".main-org .info .entry .value a")
-                    main_org = org_link.text.strip() if org_link else ""
-                    
+                    org_link = soup.select_one(".main-org .info .entry a.value")
+                    main_org = ""
+                    if org_link and "href" in org_link.attrs:
+                        href = org_link["href"]
+                        if isinstance(href, str):
+                            main_org = href.split("/")[-1]
+
                     if target_org.lower() == main_org.lower():
-                        return "Main"
-                
+                        rank = "None"
+                        for entry in soup.select(".main-org .info .entry"):
+                            label = entry.select_one(".label")
+                            if label and "Organization rank" in label.text:
+                                value = entry.select_one(".value")
+                                if value:
+                                    rank = value.text.strip()
+                                    break
+                        return "Main", rank
+
                 # 2. Check Affiliates
                 async with session.get(url_orgs) as response:
                     if response.status == 200:
@@ -325,12 +350,14 @@ class RSIVerification(commands.Cog):
                         for link in org_links:
                             href = link.get("href")
                             if isinstance(href, str) and f"/orgs/{target_org}".lower() in href.lower():
-                                return "Affiliate"
-                        
+                                # Affiliate rank is generally not on the orgs page easily without further scraping,
+                                # we will just return None for affiliate rank for now.
+                                return "Affiliate", "None"
+
             except Exception as e:
                 print(f"Error checking org status: {e}")
-                return "Error"
-        return "None"
+                return "Error", "Error"
+        return "None", "None"
 
     def _generate_code(self, org: str) -> str:
         # e.g., VER-SCANZ-A7K9 or just "VER-XXXX"; include org for clarity
@@ -436,9 +463,7 @@ class RSIVerification(commands.Cog):
             f"✅ Main role successfully set to {role.mention}.", ephemeral=True
         )
 
-    @app_commands.command(
-        name="set_affiliate_role", description="Set the role granted to Affiliate members."
-    )
+    @app_commands.command(name="set_affiliate_role", description="Set the role granted to Affiliate members.")
     @app_commands.describe(role="The role to grant verified affiliates.")
     @app_commands.check(has_staff_or_admin)
     async def set_affiliate_role(self, interaction: discord.Interaction, role: discord.Role):
@@ -530,13 +555,14 @@ class RSIVerification(commands.Cog):
                     if not target_org and isinstance(message, dict):
                         target_org = message.get("org")
 
-                    org_status = await self.cog._check_org_status(self.handle, target_org)
+                    org_status, org_rank = await self.cog._check_org_status(self.handle, target_org)
 
                     self.cog._link_account(
                         self.member.id,
                         self.handle,
                         target_org,
                         org_status,
+                        org_rank,
                     )
 
                     # sync roles (will add verified role and remove needs-role)
@@ -560,11 +586,24 @@ class RSIVerification(commands.Cog):
     )
     @app_commands.check(has_staff_or_admin)
     async def export_verified(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT discord_id, rsi_handle, org_handle FROM rsi_links")
+            # check if org_rank exists
+            cursor.execute("PRAGMA table_info(rsi_links)")
+            if "org_rank" in [c[1] for c in cursor.fetchall()]:
+                cursor.execute(
+                    "SELECT discord_id, rsi_handle, org_handle, org_status, org_rank FROM rsi_links"
+                )
+            else:
+                cursor.execute("SELECT discord_id, rsi_handle, org_handle, org_status, 'None' FROM rsi_links")
             rows = cursor.fetchall()
 
         if not rows:
@@ -574,13 +613,13 @@ class RSIVerification(commands.Cog):
         # Use in-memory buffer for CSV
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Discord ID", "Discord Name", "RSI Handle", "Org"])
+        writer.writerow(["Discord ID", "Discord Name", "RSI Handle", "Org", "Org Status", "Org Rank"])
 
-        for discord_id, rsi_handle, org in rows:
+        for discord_id, rsi_handle, org, status, rank in rows:
             # Try to resolve member name for readability in CSV
             member = interaction.guild.get_member(discord_id)
             name = f"{member.name}" if member else "Unknown/Left"
-            writer.writerow([discord_id, name, rsi_handle, org])
+            writer.writerow([discord_id, name, rsi_handle, org, status, rank])
 
         output.seek(0)
         file = discord.File(io.BytesIO(output.getvalue().encode()), filename="verified_members.csv")
@@ -596,6 +635,12 @@ class RSIVerification(commands.Cog):
     @app_commands.describe(role="Optional: Only include unverified members who have this role.")
     @app_commands.check(has_staff_or_admin)
     async def export_unverified(self, interaction: discord.Interaction, role: discord.Role = None):
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         with sqlite3.connect(self.db_path) as conn:
@@ -638,7 +683,6 @@ class RSIVerification(commands.Cog):
             f"✅ Exported {len(unverified_members)} unverified members.", file=file, ephemeral=True
         )
 
-
     @app_commands.command(
         name="search_verified",
         description="Search for a verified member by Handle or Discord ID.",
@@ -646,16 +690,32 @@ class RSIVerification(commands.Cog):
     @app_commands.describe(query="RSI Handle, Discord ID, or Mention")
     @app_commands.check(has_staff_or_admin)
     async def search_verified(self, interaction: discord.Interaction, query: str):
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
+            return
+
         # Cleanup query (mentions, etc)
         clean_query = query.replace("<@", "").replace(">", "").replace("!", "")
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT discord_id, rsi_handle, org_handle FROM rsi_links"
-                " WHERE rsi_handle LIKE ? OR discord_id = ?",
-                (f"%{query}%", clean_query if clean_query.isdigit() else 0),
-            )
+            cursor.execute("PRAGMA table_info(rsi_links)")
+            has_rank = "org_rank" in [c[1] for c in cursor.fetchall()]
+
+            if has_rank:
+                cursor.execute(
+                    "SELECT discord_id, rsi_handle, org_handle, org_status, org_rank FROM rsi_links"
+                    " WHERE rsi_handle LIKE ? OR discord_id = ?",
+                    (f"%{query}%", clean_query if clean_query.isdigit() else 0),
+                )
+            else:
+                cursor.execute(
+                    "SELECT discord_id, rsi_handle, org_handle, org_status, 'None' FROM rsi_links"
+                    " WHERE rsi_handle LIKE ? OR discord_id = ?",
+                    (f"%{query}%", clean_query if clean_query.isdigit() else 0),
+                )
             rows = cursor.fetchall()
 
         if not rows:
@@ -663,10 +723,15 @@ class RSIVerification(commands.Cog):
             return
 
         embed = discord.Embed(title="Verification Search Results", color=discord.Color.blue())
-        for discord_id, rsi_handle, org in rows[:10]:  # Limit to 10 for sanity
+        for discord_id, rsi_handle, org, status, rank in rows[:10]:  # Limit to 10 for sanity
             member = interaction.guild.get_member(discord_id)
             mention = member.mention if member else f"ID: {discord_id} (Left Server)"
-            embed.add_field(name=f"{rsi_handle} ({org})", value=mention, inline=False)
+
+            value_text = f"User: {mention}\nStatus: {status}"
+            if rank and rank != "None":
+                value_text += f"\nRank: {rank}"
+
+            embed.add_field(name=f"{rsi_handle} ({org})", value=value_text, inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -677,6 +742,12 @@ class RSIVerification(commands.Cog):
     @app_commands.describe(member="The Discord member to grant the verified role to.")
     @app_commands.check(has_staff_or_admin)
     async def grant_verified(self, interaction: discord.Interaction, member: discord.Member):
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server.", ephemeral=True
+            )
+            return
+
         # allow grant to specify org? use any for now
         rsi_handle = self._is_verified(member.id)
         if not rsi_handle:
@@ -697,7 +768,7 @@ class RSIVerification(commands.Cog):
             row = cursor.fetchone()
             if row and row[0]:
                 org_status = row[0]
-                
+
         # We try to apply the correct role mapping
         if org_status == "Main":
             role_id_str = self._get_config("main_role_id")
@@ -727,7 +798,7 @@ class RSIVerification(commands.Cog):
     async def sync_member_roles(self, member: discord.Member) -> None:
         guild = member.guild
         scanz_role = guild.get_role(int(self._get_config("scanz_role_id") or 0))
-        
+
         main_role = guild.get_role(int(self._get_config("main_role_id") or 0))
         affiliate_role = guild.get_role(int(self._get_config("affiliate_role_id") or 0))
         guest_role = guild.get_role(int(self._get_config("guest_role_id") or 0))
@@ -765,7 +836,7 @@ class RSIVerification(commands.Cog):
                 elif r != target_role and r in member.roles:
                     to_remove.append(r)
         else:
-            # Unverified User - strip org roles. Only give them unverified role 
+            # Unverified User - strip org roles. Only give them unverified role
             # if they have the 'SCANZ identifier' role or if server configured it.
             for r in all_possible_roles:
                 if r == unverified_role:
@@ -774,7 +845,7 @@ class RSIVerification(commands.Cog):
                 else:
                     if r in member.roles:
                         to_remove.append(r)
-            
+
             # If no SCANZ identifier role exists, but they are unverified, give them unverified role.
             if not scanz_role and unverified_role and unverified_role not in member.roles:
                 to_add.append(unverified_role)
@@ -843,14 +914,14 @@ class RSIVerification(commands.Cog):
         # Only process if the nickname actually changed
         if before.nick == after.nick:
             return
-        
+
         # Check if the user is verified
         rsi_handle = self._is_verified(after.id)
         if not rsi_handle:
             return
-            
+
         current_nick = after.nick or after.name
-        
+
         # "Fuzzy" allow rule: the nickname must *contain* the exact RSI handle (case-insensitive).
         # This allows things like "[SCANZ] Handle" or "Handle (Bob)".
         if rsi_handle.lower() not in current_nick.lower():

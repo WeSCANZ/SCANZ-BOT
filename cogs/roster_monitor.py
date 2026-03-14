@@ -29,8 +29,18 @@ class RosterMonitor(commands.Cog):
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT discord_id, rsi_handle, org_handle, org_status FROM rsi_links")
-                return cursor.fetchall()
+                # Use PRAGMA to check if org_rank exists (in case verification cog hasn't added it yet)
+                cursor.execute("PRAGMA table_info(rsi_links)")
+                cols = [c[1] for c in cursor.fetchall()]
+
+                if "org_rank" in cols:
+                    cursor.execute(
+                        "SELECT discord_id, rsi_handle, org_handle, org_status, org_rank FROM rsi_links"
+                    )
+                    return cursor.fetchall()
+                else:
+                    cursor.execute("SELECT discord_id, rsi_handle, org_handle, org_status FROM rsi_links")
+                    return [(row[0], row[1], row[2], row[3], "None") for row in cursor.fetchall()]
         except sqlite3.OperationalError:
             print("[RosterMonitor] Error: rsi_links table not found.")
             return []
@@ -192,29 +202,43 @@ class RosterMonitor(commands.Cog):
 
         audit_results = []
         # loop through each stored entry; entries include org value
-        for discord_id, handle, org, current_status in verified_members:
+        for discord_id, handle, org, current_status, current_rank in verified_members:
             cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
 
             # Scrape new status via the new _check_org_status logic in verification cog
             new_status = "None"
+            new_rank = "None"
             if cog:
-                new_status = await cog._check_org_status(handle, org)
+                new_status, new_rank = await cog._check_org_status(handle, org)
 
             # Did their status change?
-            if new_status and new_status != current_status:
+            if new_status and (new_status != current_status or new_rank != current_rank):
                 try:
                     with sqlite3.connect(self.db_path) as conn:
                         cursor = conn.cursor()
-                        cursor.execute(
-                            "UPDATE rsi_links SET org_status = ? WHERE discord_id = ?",
-                            (new_status, discord_id),
-                        )
+                        # Check if org_rank exists before update
+                        cursor.execute("PRAGMA table_info(rsi_links)")
+                        if "org_rank" in [c[1] for c in cursor.fetchall()]:
+                            cursor.execute(
+                                "UPDATE rsi_links SET org_status = ?, org_rank = ? WHERE discord_id = ?",
+                                (new_status, new_rank, discord_id),
+                            )
+                        else:
+                            cursor.execute(
+                                "UPDATE rsi_links SET org_status = ? WHERE discord_id = ?",
+                                (new_status, discord_id),
+                            )
                         conn.commit()
                 except Exception as e:
                     print(f"Failed to update org_status for {discord_id}: {e}")
 
                 audit_results.append(
-                    (discord_id, handle, org, f"Status changed: {current_status} -> {new_status}")
+                    (
+                        discord_id,
+                        handle,
+                        org,
+                        f"Status: {current_status} -> {new_status} | Rank: {current_rank} -> {new_rank}",
+                    )
                 )
 
                 # Re-sync their roles now that DB is updated
@@ -310,7 +334,7 @@ class RosterMonitor(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         verified_links = self._get_verified_links()
-        verified_handles = {h.lower() for _, h, _ in verified_links}
+        verified_handles = {h.lower() for _, h, _, _, _ in verified_links}
 
         # determine which org(s) to operate on
         orgs = []
