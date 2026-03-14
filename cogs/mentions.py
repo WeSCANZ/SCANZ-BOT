@@ -4,6 +4,8 @@ import re
 import discord
 from discord.ext import commands
 
+from utils.llm_api import query_llm
+
 
 class MentionResponder(commands.Cog):
     def __init__(self, bot):
@@ -53,11 +55,22 @@ class MentionResponder(commands.Cog):
                     response = reply
                     break  # Stop at the first matched keyword
 
-            # 2. Fallback to a random witty response if no keyword matches
+            # 2. Fallback to LLM if no keyword matches
             if not response:
-                response = random.choice(self.fallback_responses)
+                async with message.channel.typing():
+                    # Clean up the message to remove the bot mention before sending to LLM
+                    clean_content = message.clean_content.replace(f"@{self.bot.user.name}", "").strip()
+                    if clean_content:
+                        llm_response = await query_llm(clean_content)
+                        response = llm_response if llm_response else random.choice(self.fallback_responses)
+                    else:
+                        response = random.choice(self.fallback_responses)
 
             # Reply securely preventing everyone/here pings
+            # Truncate response if it exceeds discord limits
+            if len(response) > 2000:
+                response = response[:1996] + "..."
+
             await message.reply(
                 content=response,
                 allowed_mentions=discord.AllowedMentions(replied_user=True, everyone=False, roles=False),
