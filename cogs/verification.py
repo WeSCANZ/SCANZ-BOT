@@ -46,12 +46,14 @@ class VerifyNowView(discord.ui.View):
             )
 
             # Fetch the actual Member object from the guild (interaction.user is a User, not a Member)
-            member = interaction.guild.get_member(interaction.user.id)
-            if member is None:
-                try:
-                    member = await interaction.guild.fetch_member(interaction.user.id)
-                except discord.NotFound:
-                    member = None
+            member = None
+            if interaction.guild:
+                member = interaction.guild.get_member(interaction.user.id)
+                if member is None:
+                    try:
+                        member = await interaction.guild.fetch_member(interaction.user.id)
+                    except discord.NotFound:
+                        member = None
 
             if member:
                 # 2. Update discord nickname (DISABLED - Permission Issues)
@@ -79,8 +81,12 @@ class VerifyNowView(discord.ui.View):
 
 async def org_autocomplete(interaction: discord.Interaction, current: str):
     """Autocomplete helper for organisation parameters."""
-    cog = interaction.client.get_cog("RSIVerification")
-    orgs = cog._get_orgs() if cog else []
+    client = interaction.client
+    orgs = []
+    if isinstance(client, commands.Bot):
+        cog = client.get_cog("RSIVerification")
+        if cog and hasattr(cog, "_get_orgs"):
+            orgs = getattr(cog, "_get_orgs")()
     return [app_commands.Choice(name=o, value=o) for o in orgs if current.lower() in o.lower()]
 
 
@@ -172,7 +178,7 @@ class RSIVerification(commands.Cog):
             )
             conn.commit()
 
-    def _get_config(self, key: str) -> str:
+    def _get_config(self, key: str) -> str | None:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM rsi_config WHERE key = ?", (key,))
@@ -215,7 +221,7 @@ class RSIVerification(commands.Cog):
         self._org_cache = orgs
         return True
 
-    def _is_verified(self, discord_id: int, org: str = None) -> str:
+    def _is_verified(self, discord_id: int, org: str | None = None) -> str | None:
         """Return the linked RSI handle for the given discord ID.
 
         If `org` is provided we restrict to that organisation, otherwise
@@ -237,7 +243,12 @@ class RSIVerification(commands.Cog):
             return row[0] if row else None
 
     def _link_account(
-        self, discord_id: int, handle: str, org: str = None, org_status: str = "None", org_rank: str = "None"
+        self,
+        discord_id: int,
+        handle: str,
+        org: str | None = None,
+        org_status: str = "None",
+        org_rank: str = "None",
     ):
         # pick a default org if none supplied
         if not org:
@@ -359,7 +370,7 @@ class RSIVerification(commands.Cog):
                 return "Error", "Error"
         return "None", "None"
 
-    def _generate_code(self, org: str) -> str:
+    def _generate_code(self, org: str | None) -> str:
         # e.g., VER-SCANZ-A7K9 or just "VER-XXXX"; include org for clarity
         suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
         # prefix with org symbol if available
@@ -369,7 +380,7 @@ class RSIVerification(commands.Cog):
     @app_commands.describe(handle="Your exact Star Citizen RSI Handle")
     @app_commands.describe(org="The organisation/affiliate you belong to")
     @app_commands.autocomplete(org=org_autocomplete)
-    async def verify(self, interaction: discord.Interaction, handle: str, org: str = None):
+    async def verify(self, interaction: discord.Interaction, handle: str, org: str | None = None):
         # ensure there is at least one configured org
         orgs = self._get_orgs()
         if not orgs:
@@ -503,7 +514,7 @@ class RSIVerification(commands.Cog):
     @app_commands.check(has_staff_or_admin)
     @app_commands.autocomplete(org=org_autocomplete)
     async def manual_verify(
-        self, interaction: discord.Interaction, member: discord.Member, handle: str, org: str = None
+        self, interaction: discord.Interaction, member: discord.Member, handle: str, org: str | None = None
     ):
         # Determine organisation for manual verification
         orgs = self._get_orgs()
@@ -634,7 +645,7 @@ class RSIVerification(commands.Cog):
     )
     @app_commands.describe(role="Optional: Only include unverified members who have this role.")
     @app_commands.check(has_staff_or_admin)
-    async def export_unverified(self, interaction: discord.Interaction, role: discord.Role = None):
+    async def export_unverified(self, interaction: discord.Interaction, role: discord.Role | None = None):
         if not interaction.guild:
             await interaction.response.send_message(
                 "This command can only be used in a server.", ephemeral=True
