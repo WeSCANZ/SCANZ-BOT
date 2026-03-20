@@ -699,6 +699,9 @@ class RSIVerification(commands.Cog):
         # Cleanup query (mentions, etc)
         clean_query = query.replace("<@", "").replace(">", "").replace("!", "")
 
+        # Escape wildcard characters for LIKE query
+        escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(rsi_links)")
@@ -707,14 +710,14 @@ class RSIVerification(commands.Cog):
             if has_rank:
                 cursor.execute(
                     "SELECT discord_id, rsi_handle, org_handle, org_status, org_rank FROM rsi_links"
-                    " WHERE rsi_handle LIKE ? OR discord_id = ?",
-                    (f"%{query}%", clean_query if clean_query.isdigit() else 0),
+                    " WHERE rsi_handle LIKE ? ESCAPE '\\' OR discord_id = ?",
+                    (f"%{escaped_query}%", clean_query if clean_query.isdigit() else 0),
                 )
             else:
                 cursor.execute(
                     "SELECT discord_id, rsi_handle, org_handle, org_status, 'None' FROM rsi_links"
-                    " WHERE rsi_handle LIKE ? OR discord_id = ?",
-                    (f"%{query}%", clean_query if clean_query.isdigit() else 0),
+                    " WHERE rsi_handle LIKE ? ESCAPE '\\' OR discord_id = ?",
+                    (f"%{escaped_query}%", clean_query if clean_query.isdigit() else 0),
                 )
             rows = cursor.fetchall()
 

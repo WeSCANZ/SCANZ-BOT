@@ -1,7 +1,9 @@
 """Shared app_commands checks for SCANZ-BOT."""
 
+from typing import Any, cast
+
 import discord
-from discord import app_commands
+from discord.ext import commands
 
 
 async def has_staff_or_admin(interaction: discord.Interaction) -> bool:
@@ -18,9 +20,11 @@ async def has_staff_or_admin(interaction: discord.Interaction) -> bool:
         return False
     if member.guild_permissions.administrator:
         return True
-    ver_cog = interaction.client.get_cog("RSIVerification")
+
+    bot = cast(commands.Bot, interaction.client)
+    ver_cog = bot.get_cog("RSIVerification")
     if ver_cog and hasattr(ver_cog, "_get_config"):
-        role_id_str = ver_cog._get_config("staff_role_id")
+        role_id_str = cast(Any, ver_cog)._get_config("staff_role_id")
         if role_id_str:
             role = interaction.guild.get_role(int(role_id_str))
             if role and role in member.roles:

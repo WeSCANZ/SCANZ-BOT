@@ -18,8 +18,35 @@ class RosterMonitor(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db_path = "data/enforcer.db"
+        self._setup_db()
         # the list of organisations will be retrieved from the verification cog
         self.roster_check_loop.start()
+
+    def _setup_db(self):
+        import os
+
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS rsi_config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            # Create a basic version of rsi_links in case verification cog fails to load
+            # Verification cog will migrate this to add org_status/org_rank if it loads later
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS rsi_links (
+                    discord_id INTEGER,
+                    rsi_handle TEXT NOT NULL,
+                    org_handle TEXT NOT NULL DEFAULT 'SCANZ',
+                    org_status TEXT DEFAULT 'None',
+                    org_rank TEXT DEFAULT 'None',
+                    PRIMARY KEY(discord_id, org_handle)
+                )
+            """)
+            conn.commit()
 
     async def cog_unload(self):
         self.roster_check_loop.cancel()
