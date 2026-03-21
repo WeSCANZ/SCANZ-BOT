@@ -65,6 +65,20 @@ class VerifyNowView(discord.ui.View):
                 # 3. Add Verified Role (sync will also remove needs-role if present)
                 await self.cog.sync_member_roles(member)
 
+                # Log admin action
+                embed = discord.Embed(
+                    title="User Verified Successfully",
+                    description=(
+                        f"**User:** {member.mention} ({member.id})\n"
+                        f"**RSI Handle:** `{self.handle}`\n"
+                        f"**Org:** `{target_org}`\n"
+                        f"**Status:** `{org_status}`"
+                    ),
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow(),
+                )
+                await self.cog.bot.log_admin_action(embed)
+
             await interaction.followup.send(
                 f"✅ **Verification Successful!** Your Discord account is now officially linked to the "
                 f"RSI Handle **{self.handle}**.\n\nYou may now remove the code from your RSI Short Bio.",
@@ -450,6 +464,18 @@ class RSIVerification(commands.Cog):
             ephemeral=True,
         )
 
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=(
+                f"**Action:** Staff Role set to {role.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
     @app_commands.command(
         name="clear_staff_role",
         description="Admin only: Clear the staff role so only Administrator can use staff commands.",
@@ -463,8 +489,18 @@ class RSIVerification(commands.Cog):
             ephemeral=True,
         )
 
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=f"**Action:** Staff Role **CLEARED**\n**Staff:** {interaction.user.mention}",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
     @app_commands.command(
-        name="set_main_role", description="Set the role granted to verified Main Org members."
+        name="set_main_role",
+        description="Set the role granted to verified Main Org members."
     )
     @app_commands.describe(role="The role to grant verified members (e.g. SCANZ Member).")
     @app_commands.check(has_staff_or_admin)
@@ -474,6 +510,15 @@ class RSIVerification(commands.Cog):
             f"✅ Main role successfully set to {role.mention}.", ephemeral=True
         )
 
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=f"**Action:** Main role set to {role.mention}\n**Staff:** {interaction.user.mention}",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
     @app_commands.command(name="set_affiliate_role", description="Set the role granted to Affiliate members.")
     @app_commands.describe(role="The role to grant verified affiliates.")
     @app_commands.check(has_staff_or_admin)
@@ -482,6 +527,18 @@ class RSIVerification(commands.Cog):
         await interaction.response.send_message(
             f"✅ Affiliate role successfully set to {role.mention}.", ephemeral=True
         )
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=(
+                f"**Action:** Affiliate role set to {role.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
 
     @app_commands.command(
         name="set_guest_role", description="Set the role granted to verified Honored Guests."
@@ -504,6 +561,18 @@ class RSIVerification(commands.Cog):
         await interaction.response.send_message(
             f"✅ Unverified role successfully set to {role.mention}.", ephemeral=True
         )
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=(
+                f"**Action:** Unverified role set to {role.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
 
     @app_commands.command(
         name="manual_verify",
@@ -578,6 +647,20 @@ class RSIVerification(commands.Cog):
 
                     # sync roles (will add verified role and remove needs-role)
                     await self.cog.sync_member_roles(self.member)
+
+                    # Log admin action
+                    embed = discord.Embed(
+                        title="Manual Verification Completed",
+                        description=(
+                            f"**Member:** {self.member.mention} ({self.member.id})\n"
+                            f"**RSI Handle:** `{self.handle}`\n"
+                            f"**Org:** `{target_org}`\n"
+                            f"**Staff:** {interaction.user.mention}"
+                        ),
+                        color=discord.Color.green(),
+                        timestamp=discord.utils.utcnow(),
+                    )
+                    await self.cog.bot.log_admin_action(embed)
 
                     await interaction.followup.send(
                         f"✅ Successfully verified and linked {self.member.mention} to `{self.handle}`.",

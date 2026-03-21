@@ -139,8 +139,22 @@ class FormatSetupView(discord.ui.View):
 
         await self.channel.send(embed=embed)
         await interaction.response.send_message(
-            f"Configuration saved and info embed posted in {self.channel.mention}.", ephemeral=True
+            f"Configuration saved and info embed posted in {self.channel.mention}.",
+            ephemeral=True,
         )
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Channel Format Setup",
+            description=(
+                f"**Channel:** {self.channel.mention}\n"
+                f"**Allowed Loops:** `{', '.join(self.selected_loops)}`\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.cog.bot.log_admin_action(embed)
         self.stop()
 
 
@@ -155,14 +169,25 @@ class MessageEnforcer(commands.Cog):
     def _setup_db(self):
         # Ensure data directory exists
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        # Create table if it doesn't exist
+        # Create tables if they don't exist
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS enforced_channels (
-                    channel_id INTEGER PRIMARY KEY
+                    channel_id INTEGER PRIMARY KEY,
+                    mode TEXT DEFAULT 'strict',
+                    mode_parameters TEXT
                 )
             """)
+            
+            # Check for columns if table already existed (migration)
+            cursor.execute("PRAGMA table_info(enforced_channels)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if "mode" not in columns:
+                cursor.execute("ALTER TABLE enforced_channels ADD COLUMN mode TEXT DEFAULT 'strict'")
+            if "mode_parameters" not in columns:
+                cursor.execute("ALTER TABLE enforced_channels ADD COLUMN mode_parameters TEXT")
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS channel_configs (
                     channel_id INTEGER PRIMARY KEY,
@@ -174,6 +199,16 @@ class MessageEnforcer(commands.Cog):
                 CREATE TABLE IF NOT EXISTS post_targets (
                     post_type TEXT PRIMARY KEY,
                     channel_id INTEGER NOT NULL
+                )
+            """)
+            
+            # New table for named user reminders
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS named_user_reminders (
+                    user_id INTEGER PRIMARY KEY,
+                    reminder_message TEXT,
+                    punishment_type TEXT DEFAULT 'none',
+                    punishment_value INTEGER DEFAULT 0
                 )
             """)
             conn.commit()
@@ -244,36 +279,168 @@ class MessageEnforcer(commands.Cog):
 
         return interaction.channel
 
-    def _is_enforced(self, channel_id: int) -> bool:
+    def _get_enforcement_info(self, channel_id: int):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM enforced_channels WHERE channel_id = ?", (channel_id,))
-            return cursor.fetchone() is not None
+            cursor.execute(
+                "SELECT mode, mode_parameters FROM enforced_channels WHERE channel_id = ?",
+                (channel_id,),
+            )
+            return cursor.fetchone()
 
-    def _set_enforced(self, channel_id: int, enforced: bool):
+    def _is_enforced(self, channel_id: int) -> bool:
+        return self._get_enforcement_info(channel_id) is not None
+
+    def _set_enforced(self, channel_id: int, mode: str = "strict", parameters: str = None):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            if enforced:
-                cursor.execute(
-                    "INSERT OR IGNORE INTO enforced_channels (channel_id) VALUES (?)", (channel_id,)
-                )
-            else:
+            if mode == "disabled":
                 cursor.execute("DELETE FROM enforced_channels WHERE channel_id = ?", (channel_id,))
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO enforced_channels (channel_id, mode, mode_parameters) 
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(channel_id) DO UPDATE SET 
+                        mode=excluded.mode, 
+                        mode_parameters=excluded.mode_parameters
+                    """, 
+                    (channel_id, mode, parameters)
+                )
             conn.commit()
+
+    def _set_user_reminder(self, user_id: int, message: str, p_type: str = "none", p_value: int = 0):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            if message is None:
+                cursor.execute("DELETE FROM named_user_reminders WHERE user_id = ?", (user_id,))
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO named_user_reminders (user_id, reminder_message, punishment_type, punishment_value) 
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET 
+                        reminder_message=excluded.reminder_message,
+                        punishment_type=excluded.punishment_type,
+                        punishment_value=excluded.punishment_value
+                    """,
+                    (user_id, message, p_type, p_value),
+                )
+            conn.commit()
+
+    def _get_user_reminder(self, user_id: int):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT reminder_message, punishment_type, punishment_value "
+                "FROM named_user_reminders WHERE user_id = ?",
+                (user_id,),
+            )
+            return cursor.fetchone()
 
     @app_commands.command(
         name="enforce_channel",
-        description="Toggle strict message enforcement for the current channel.",
+        description="Configure message enforcement for the current channel.",
+    )
+    @app_commands.describe(
+        mode="Enforcement level: Strict, Warn Only, Timed Delete, or Grace Period.",
+        parameters="Optional settings (e.g., delay in seconds for Timed Delete, or date for Grace Period).",
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Strict (Instant Delete)", value="strict"),
+            app_commands.Choice(name="Warn Only (No Delete)", value="warn_only"),
+            app_commands.Choice(name="Timed Delete", value="timed_delete"),
+            app_commands.Choice(name="Grace Period (Warning)", value="grace_period"),
+            app_commands.Choice(name="Disabled", value="disabled"),
+        ]
     )
     @app_commands.check(has_staff_or_admin)
-    async def enforce_channel(self, interaction: discord.Interaction, enabled: bool):
-        """Toggle strict message enforcement for the current channel."""
-        self._set_enforced(interaction.channel_id, enabled)
+    async def enforce_channel(
+        self,
+        interaction: discord.Interaction,
+        mode: app_commands.Choice[str],
+        parameters: str = None,
+    ):
+        """Configure message enforcement for the current channel."""
+        self._set_enforced(interaction.channel_id, mode.value, parameters)
 
-        status = "enabled" if enabled else "disabled"
+        status = f"set to **{mode.name}**" if mode.value != "disabled" else "disabled"
+        param_hint = f" with parameters: `{parameters}`" if parameters else ""
         await interaction.response.send_message(
-            f"Message enforcement has been {status} for this channel.", ephemeral=True
+            f"Message enforcement has been {status}{param_hint} for this channel.", ephemeral=True
         )
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Enforcement Configuration Changed",
+            description=(
+                f"**Channel:** {interaction.channel.mention}\n"
+                f"**Mode:** {mode.name}\n"
+                f"**Parameters:** `{parameters or 'None'}`\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
+    @app_commands.command(
+        name="enforcer_user_reminder",
+        description="Set a custom reminder message and punishment for a specific user.",
+    )
+    @app_commands.describe(
+        user="The user to target.",
+        message="The reminder message (None to remove).",
+        punishment_type="Punishment type (optional).",
+        punishment_value="Punishment value (e.g., timeout seconds).",
+    )
+    @app_commands.choices(
+        punishment_type=[
+            app_commands.Choice(name="None", value="none"),
+            app_commands.Choice(name="Timeout", value="timeout"),
+        ]
+    )
+    @app_commands.check(has_staff_or_admin)
+    async def enforcer_user_reminder(
+        self,
+        interaction: discord.Interaction,
+        user: discord.User,
+        message: str = None,
+        punishment_type: app_commands.Choice[str] = None,
+        punishment_value: int = 0,
+    ):
+        """Set a custom reminder for a named user."""
+        p_type = punishment_type.value if punishment_type else "none"
+        self._set_user_reminder(user.id, message, p_type, punishment_value)
+
+        if message is None:
+            await interaction.response.send_message(
+                f"Removed custom reminder for {user.mention}.", ephemeral=True
+            )
+        else:
+            p_msg = (
+                f" (Punishment: {p_type} for {punishment_value}s)"
+                if p_type != "none"
+                else ""
+            )
+            await interaction.response.send_message(
+                f"Custom reminder set for {user.mention}: {message}{p_msg}", ephemeral=True
+            )
+
+        # Log admin action
+        embed = discord.Embed(
+            title="User Reminder Updated",
+            description=(
+                f"**User:** {user.mention} ({user.id})\n"
+                f"**Message:** {message or 'REMOVED'}\n"
+                f"**Punishment:** {p_type} ({punishment_value}s)\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
 
     @app_commands.command(
         name="scanz_format", description="Interactive setup for the channel's enforced log format."
@@ -301,8 +468,21 @@ class MessageEnforcer(commands.Cog):
         """Set a default target channel for pings."""
         self._set_post_target("Ping", channel.id)
         await interaction.response.send_message(
-            f"Successfully set the default channel for pings to {channel.mention}.", ephemeral=True
+            f"Successfully set the default channel for pings to {channel.mention}.",
+            ephemeral=True,
         )
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=(
+                f"**Action:** Ping Target Channel set to {channel.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
 
     @app_commands.command(
         name="scanz_subscriptions",
@@ -312,7 +492,9 @@ class MessageEnforcer(commands.Cog):
     async def scanz_subscriptions(self, interaction: discord.Interaction):
         """Post the role subscription message."""
         embed = discord.Embed(
-            title=CONFIG.get("messages", {}).get("subscription_title", "Ping Role Subscriptions"),
+            title=CONFIG.get("messages", {}).get(
+                "subscription_title", "Ping Role Subscriptions"
+            ),
             description=CONFIG.get("messages", {}).get(
                 "subscription_description", "Subscribe to pings here."
             ),
@@ -330,47 +512,125 @@ class MessageEnforcer(commands.Cog):
         if message.author.bot or message.webhook_id:
             return
 
+        # Check for named user reminders
+        reminder_info = self._get_user_reminder(message.author.id)
+        if reminder_info:
+            reminder_text, p_type, p_value = reminder_info
+
+            # Send custom reminder
+            try:
+                await message.author.send(reminder_text)
+            except discord.Forbidden:
+                await message.channel.send(
+                    f"{message.author.mention}, {reminder_text}", delete_after=15
+                )
+
+            # Apply punishment
+            if p_type == "timeout" and p_value > 0 and isinstance(message.author, discord.Member):
+                try:
+                    import datetime
+
+                    await message.author.timeout(
+                        datetime.timedelta(seconds=p_value),
+                        reason="Enforcer custom punishment",
+                    )
+
+                    # Log punishment
+                    embed = discord.Embed(
+                        title="User Punishment Applied",
+                        description=(
+                            f"**User:** {message.author.mention} ({message.author.id})\n"
+                            f"**Action:** Timeout ({p_value}s)\n"
+                            f"**Reason:** Triggered named user reminder penalty."
+                        ),
+                        color=discord.Color.dark_red(),
+                        timestamp=discord.utils.utcnow(),
+                    )
+                    await self.bot.log_admin_action(embed)
+                except Exception as e:
+                    print(f"Failed to timeout user {message.author.id}: {e}")
+
         # Check if the channel is enforced
-        if not self._is_enforced(message.channel.id):
+        enforcement_info = self._get_enforcement_info(message.channel.id)
+        if not enforcement_info:
             return
+
+        mode, mode_params = enforcement_info
 
         # Bypass enforcement for specific roles
         if isinstance(message.author, discord.Member):
-            allowed_roles = {"officer", "officers", "custodian", "custodians"}
+            allowed_roles = {"officer", "officers", "custodian", "custodians", "scanz developer"}
             user_roles = {role.name.lower() for role in message.author.roles}
             if allowed_roles & user_roles:
                 return
 
-        # Check if it might be a valid command from an old prefix (we want to encourage slash commands,
-        # but discord handles slash without hitting on_message with content in the same way usually.
-        # Regular messages hit this though.)
-        # If we really want ZERO non-bot messages, we just delete everything.
-        # The slash command responses come from the bot.
+        # Handle different modes
+        warning_template = CONFIG.get("messages", {}).get(
+            "warning_text",
+            (
+                "Your message in {channel} was deleted because the channel is strictly formatted.\n"
+                "Please use the `/ping` command to submit requests."
+            ),
+        )
+        warning_text = warning_template.replace("{channel}", message.channel.mention)
 
-        try:
-            # Delete the user's message
-            await message.delete()
-
-            # Inform the user via DM
-            warning_template = CONFIG.get("messages", {}).get(
-                "warning_text",
-                (
-                    "Your message in {channel} was deleted because the channel is strictly formatted.\n"
-                    "Please use the `/ping` command to submit requests in that channel."
-                ),
-            )
-            warning_text = warning_template.replace("{channel}", message.channel.mention)
+        if mode == "strict":
             try:
-                await message.author.send(warning_text)
-            except discord.Forbidden:
-                # Can't DM user, optionally send a temporary message in the channel
-                await message.channel.send(f"{message.author.mention}, {warning_text}", delete_after=10)
-        except discord.errors.NotFound:
-            # Message already deleted
-            pass
-        except discord.errors.Forbidden:
-            # Bot lacks permissions to delete messages
-            print(f"Warning: Missing permissions to delete message in {message.channel.name}")
+                await message.delete()
+                try:
+                    await message.author.send(warning_text)
+                except discord.Forbidden:
+                    await message.channel.send(
+                        f"{message.author.mention}, {warning_text}", delete_after=10
+                    )
+
+                # Log to admin channel
+                embed = discord.Embed(
+                    title="Strict Enforcement: Message Deleted",
+                    description=(
+                        f"**User:** {message.author.mention} ({message.author.id})\n"
+                        f"**Channel:** {message.channel.mention}\n"
+                        f"**Content Snippet:** {message.content[:200] if message.content else 'None'}"
+                    ),
+                    color=discord.Color.red(),
+                    timestamp=discord.utils.utcnow(),
+                )
+                await self.bot.log_admin_action(embed)
+            except (discord.NotFound, discord.Forbidden):
+                pass
+
+        elif mode == "warn_only":
+            warn_msg = (
+                f"{message.author.mention}, **Notice:** This channel will eventually "
+                "require `/ping`. Please start practicing now!"
+            )
+            await message.channel.send(warn_msg, delete_after=15)
+
+        elif mode == "timed_delete":
+            try:
+                delay = int(mode_params) if mode_params and mode_params.isdigit() else 60
+            except ValueError:
+                delay = 60
+
+            await message.channel.send(
+                f"{message.author.mention}, your message will be deleted in {delay} "
+                "seconds. This channel requires `/ping`.",
+                delete_after=10,
+            )
+            await asyncio.sleep(delay)
+            try:
+                await message.delete()
+            except (discord.NotFound, discord.Forbidden):
+                pass
+
+        elif mode == "grace_period":
+            # Parameters might be a date or "X days"
+            msg = (
+                f"{message.author.mention}, **Channel Transition Warning:** In "
+                f"{mode_params or 'a few'} days, this channel will transition to "
+                "**Strict Enforcement**. Only `/ping` messages will be allowed."
+            )
+            await message.channel.send(msg, delete_after=20)
 
     @app_commands.command(name="ping", description="Create a formatted alert/ping.")
     @app_commands.choices(game_loop=GAME_LOOP_CHOICES)

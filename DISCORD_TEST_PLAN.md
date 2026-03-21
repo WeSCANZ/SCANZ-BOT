@@ -145,3 +145,19 @@ Manual test checklist. Run in order — later tests depend on earlier configurat
 | 11.2 `[U]` | `/verify handle:ValidHandle org:SCANZ`, add wrong code to bio, click Verify | *"The code was not found in your Short Bio..."* |
 | 11.3 `[S]` | `/roster_audit` when `RSIVerification` cog is not loaded | *"❌ RSIVerification cog is not loaded."* |
 | 11.4 | Restart bot with no `LOG_CHANNEL_ID` set | Warning printed to console; bot starts normally |
+ 
+ ---
+ 
+ ## Phase 12 — Admin Action Logging
+ 
+ | # | Action | Expected Result |
+ |---|--------|----------------|
+ | 12.1 `[A]` | Start the bot with `ADMIN_LOG_CHANNEL_ID` configured | Bot posts a startup message in the admin log channel |
+ | 12.2 `[S]` | `/enforce_channel mode:Strict` | Embed in `ADMIN_LOG_CHANNEL_ID` showing the config change |
+ | 12.3 `[U]` | Type a regular message in a strictly enforced channel | "Strict Enforcement: Message Deleted" embed posted to admin log |
+ | 12.4 `[S]` | `/enforcer_user_reminder user:@TestUser message:"Hello" punishment_type:Timeout punishment_value:60` | "User Reminder Updated" embed posted to admin log |
+ | 12.5 `[U]` | Targeted user posts a message | "User Punishment Applied" embed posted to admin log (with Timeout details) |
+ | 12.6 `[S]` | `/set_suggestion_channel channel:#suggestions` | "Log Configuration Updated" (Suggestion Channel) embed in admin log |
+ | 12.7 `[S]` | `/setup_reaction_role ...` | "Reaction Role Created" embed in admin log |
+ | 12.8 `[S]` | `/roster_audit` or `/org_full_sync` | Embed in `ADMIN_LOG_CHANNEL_ID` noting the manual trigger |
+ | 12.9 `[S]` | Verify successful verification flow | "User Verified Successfully" embed in admin log |

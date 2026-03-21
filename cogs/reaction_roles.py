@@ -70,6 +70,20 @@ class ReactionRoles(commands.Cog):
             )
             conn.commit()
 
+        # Log admin action
+        embed_log = discord.Embed(
+            title="Reaction Role Created",
+            description=(
+                f"**Channel:** {interaction.channel.mention}\n"
+                f"**Emoji:** {emoji}\n"
+                f"**Role:** {role.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed_log)
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if payload.message_id in self.reaction_roles:
