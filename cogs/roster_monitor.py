@@ -326,6 +326,18 @@ class RosterMonitor(commands.Cog):
             f"✅ Roster audit channel set to {channel.mention}.", ephemeral=True
         )
 
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=(
+                f"**Action:** Roster Audit Channel set to {channel.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
     @app_commands.command(
         name="roster_audit",
         description="Manually trigger a check of all verified members' Org status.",
@@ -339,6 +351,15 @@ class RosterMonitor(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         await self._run_audit(interaction)
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Manual Roster Audit Triggered",
+            description=f"**Staff:** {interaction.user.mention}",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
 
     @app_commands.command(
         name="org_full_sync",
@@ -425,6 +446,18 @@ class RosterMonitor(commands.Cog):
             )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+        # Log admin action
+        embed_log = discord.Embed(
+            title="Full Org Roster Sync Triggered",
+            description=(
+                f"**Org:** `{org or 'ALL'}`\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed_log)
 
 
 async def setup(bot):

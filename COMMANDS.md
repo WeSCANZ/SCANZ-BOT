@@ -36,7 +36,8 @@ This document lists all available slash commands for the SCANZ-BOT.
 | Command | Description | Permission |
 |---------|-------------|------------|
 | `/ping game_loop: description: [time:] [location:] [requirements:] [link:] [channel:]` | Create a formatted alert/ping. Automatically mentions `@SCANZ`. Posts to the configured ping channel or the specified `channel`. | Everyone |
-| `/enforce_channel enabled:` | Toggle strict message enforcement for the current channel. When enabled, non-bot messages are deleted and the author is DM-warned. | Staff or Admin |
+| `/enforce_channel mode: [parameters:]` | Configure message enforcement for the current channel. Modes: `Strict`, `Warn Only`, `Timed Delete`, `Grace Period`. | Staff or Admin |
+| `/enforcer_user_reminder user: message: [punishment_type:] [punishment_value:]` | Set a custom reminder and optional punishment (e.g. timeout) for a specific user. | Staff or Admin |
 | `/scanz_format` | Interactive setup for a channel's allowed Game Loops. Posts an informational embed on save. Channel must be enforced first. | Staff or Admin |
 | `/set_ping_target channel:` | Set the default destination channel for `/ping` posts. | Staff or Admin |
 | `/scanz_subscriptions` | Post a persistent role-subscription message with toggle buttons. | Staff or Admin |
