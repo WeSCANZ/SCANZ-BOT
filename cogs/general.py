@@ -1,7 +1,10 @@
 import datetime
+import os
 import random
+from pathlib import Path
 
 import discord
+import dotenv
 import pytz
 from discord import app_commands
 from discord.ext import commands
@@ -129,10 +132,34 @@ class General(commands.Cog):
         embed2.add_field(
             name="`/set_staff_role`", value="Set the role that can use staff commands.", inline=False
         )
+        embed2.add_field(
+            name="`/set_log_channel`", value="Set the channel for bot boot/update logs.", inline=False
+        )
         embed2.add_field(name="`/clear_staff_role`", value="Clear the staff role (Admin only).", inline=False)
         embed2.set_footer(text="For full argument details, type the command or check COMMANDS.md.")
 
         await interaction.response.send_message(embeds=[embed1, embed2], ephemeral=True)
+
+    @app_commands.command(
+        name="set_log_channel",
+        description="Admin only: Set the channel for bot startup and update logs."
+    )
+    @app_commands.describe(channel="The channel to send bot startup/update logs to.")
+    @app_commands.default_permissions(administrator=True)
+    async def set_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the log channel. Only users with Administrator can run this."""
+        env_path = Path('.env')
+        
+        # Check if .env exists, if not create an empty one
+        if not env_path.exists():
+            env_path.touch()
+        
+        dotenv.set_key(env_path, "LOG_CHANNEL_ID", str(channel.id))
+        os.environ["LOG_CHANNEL_ID"] = str(channel.id)
+        
+        await interaction.response.send_message(
+            f"✅ Log channel successfully set to {channel.mention}.", ephemeral=True
+        )
 
 
 async def setup(bot):

@@ -79,6 +79,7 @@ This document lists all available slash commands for the SCANZ-BOT.
 | Command | Description | Permission |
 |---------|-------------|------------|
 | `/set_staff_role role:` | Set the role that can use all staff commands. | Admin only |
+| `/set_log_channel channel:` | Set the channel for bot startup and update logs. | Admin only |
 | `/clear_staff_role` | Clear the staff role so only Administrators can use staff commands. | Admin only |
 
 ---
