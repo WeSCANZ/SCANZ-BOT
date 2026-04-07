@@ -51,8 +51,10 @@ class ScanzBot(commands.Bot):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print("------")
 
-        # Get the channel from .env
+        # Get the channels from .env
         channel_id_str = os.getenv("LOG_CHANNEL_ID")
+        self.admin_log_channel_id = os.getenv("ADMIN_LOG_CHANNEL_ID")
+
         if channel_id_str:
             try:
                 channel_id = int(channel_id_str)
@@ -87,9 +89,25 @@ class ScanzBot(commands.Bot):
                         f"**Latest Change:** `{commit_msg}`"
                     )
             except ValueError:
-                print(f"Error: Invalid LOG_CHANNEL_ID format in environment variables: {channel_id_str}")
+                print(f"Error: Invalid LOG_CHANNEL_ID format: {channel_id_str}")
         else:
             print("Warning: LOG_CHANNEL_ID not found in environment variables.")
+
+    async def log_admin_action(self, embed: discord.Embed):
+        """Send a formatted embed to the admin-notifications channel."""
+        if not self.admin_log_channel_id:
+            return
+
+        try:
+            channel_id = int(self.admin_log_channel_id)
+            channel = self.get_channel(channel_id)
+            if not channel:
+                channel = await self.fetch_channel(channel_id)
+
+            if isinstance(channel, discord.TextChannel):
+                await channel.send(embed=embed)
+        except Exception as e:
+            print(f"Failed to send admin log: {e}")
 
 
 bot = ScanzBot()

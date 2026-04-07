@@ -81,7 +81,8 @@ class Suggestions(commands.Cog):
             conn.commit()
 
     @app_commands.command(
-        name="set_suggestion_channel", description="Set the channel where suggestions will be sent."
+        name="set_suggestion_channel",
+        description="Set the channel where suggestions will be sent."
     )
     @app_commands.check(has_staff_or_admin)
     async def set_suggestion_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
@@ -91,9 +92,22 @@ class Suggestions(commands.Cog):
             f"✅ Suggestion channel set to {channel.mention}.", ephemeral=True
         )
 
+        # Log admin action
+        embed = discord.Embed(
+            title="Log Configuration Updated",
+            description=(
+                f"**Action:** Suggestion Channel set to {channel.mention}\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
     @app_commands.command(name="suggestion", description="Submit a suggestion to the SCANZ team.")
     @app_commands.describe(
-        text="Your suggestion or feedback", anonymous="Whether to hide your name from the staff"
+        text="Your suggestion or feedback",
+        anonymous="Whether to hide your name from the staff"
     )
     async def suggestion(self, interaction: discord.Interaction, text: str, anonymous: bool = False):
         """Submit a suggestion."""
