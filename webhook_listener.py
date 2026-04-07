@@ -15,7 +15,7 @@ app = Flask(__name__)
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 if not GITHUB_SECRET:
     raise RuntimeError("GITHUB_SECRET environment variable is not set. Refusing to start.")
-UPDATE_SCRIPT = "/opt/discord-bots/update.sh"
+UPDATE_SCRIPT = "/opt/scanz-bot/update.sh"
 # ---------------------
 
 

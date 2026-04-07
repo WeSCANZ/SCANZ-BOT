@@ -1,6 +1,6 @@
 #!/bin/bash
-BOT_DIR="/opt/discord-bots/scanz-bot"
-SERVICE_NAME="discord-bot"
+BOT_DIR="/opt/scanz-bot"
+SERVICE_NAME="scanz-bot"
 
 echo "Starting deployment..."
 cd "$BOT_DIR" || exit 1

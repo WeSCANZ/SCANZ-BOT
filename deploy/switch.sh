@@ -1,7 +1,7 @@
 #!/bin/bash
-# Manual Branch Switcher (/opt/discord-bots/switch.sh)
+# Manual Branch Switcher (/opt/scanz-bot/switch.sh)
 
-BOT_DIR="/opt/discord-bots/my-bot"
+BOT_DIR="/opt/scanz-bot"
 TARGET_BRANCH=$1
 
 if [ -z "$TARGET_BRANCH" ]; then
@@ -18,4 +18,4 @@ git checkout "$TARGET_BRANCH"
 git reset --hard "origin/$TARGET_BRANCH"
 
 echo "Successfully switched. Running update script..."
-/opt/discord-bots/update.sh "$TARGET_BRANCH"
+/opt/scanz-bot/update.sh "$TARGET_BRANCH"

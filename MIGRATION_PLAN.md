@@ -43,7 +43,7 @@ The server needs to know about the new repo to pull updates.
 1.  SSH into the Home Lab server (LXC Container).
 2.  Update the git remote:
     ```bash
-    cd /opt/discord-bots/scanz-bot
+    cd /opt/scanz-bot
     git remote set-url origin https://github.com/WeSCANZ/SCANZ-BOT.git
     ```
 3.  **Authentication**: If the repo is Private, the server needs a **Deploy Key** or **Personal Access Token (PAT)** to pull.
