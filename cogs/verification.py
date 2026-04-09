@@ -36,13 +36,14 @@ class VerifyNowView(discord.ui.View):
                 target_org = message.get("org")
 
             # Determine Org Status dynamically via RSI (Main / Affiliate / None)
-            org_status = await self.cog._check_org_status(self.handle, target_org)
+            org_status, org_rank = await self.cog._check_org_status(self.handle, target_org)
 
             self.cog._link_account(
                 interaction.user.id,
                 self.handle,
                 target_org,
                 org_status,
+                org_rank,
             )
 
             # Fetch the actual Member object from the guild (interaction.user is a User, not a Member)
@@ -72,7 +73,8 @@ class VerifyNowView(discord.ui.View):
                         f"**User:** {member.mention} ({member.id})\n"
                         f"**RSI Handle:** `{self.handle}`\n"
                         f"**Org:** `{target_org}`\n"
-                        f"**Status:** `{org_status}`"
+                        f"**Status:** `{org_status}`\n"
+                        f"**Rank:** `{org_rank}`"
                     ),
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow(),
