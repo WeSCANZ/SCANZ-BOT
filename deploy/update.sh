@@ -1,8 +1,8 @@
 #!/bin/bash
-# Server-side Deployment Script (/opt/discord-bots/update.sh)
+# Server-side Deployment Script (/opt/scanz-bot/update.sh)
 
-BOT_DIR="/opt/discord-bots/my-bot"
-SERVICE_NAME="discord-bot"
+BOT_DIR="/opt/scanz-bot"
+SERVICE_NAME="scanz-bot"
 
 # Branch is passed from the webhook listener, or default to main
 CURRENT_BRANCH=${1:-main}

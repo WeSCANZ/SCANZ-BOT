@@ -1,29 +1,35 @@
-from flask import Flask, request, jsonify
-import subprocess
-import hmac
 import hashlib
+import hmac
 import os
+import subprocess
+
 from dotenv import load_dotenv
+from flask import Flask, jsonify, request
 
 load_dotenv()
 
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-# Load secret from environment variable for security
-GITHUB_SECRET = os.getenv("GITHUB_SECRET", "YOUR_OPENSSL_GENERATED_SECRET")
-UPDATE_SCRIPT = "/opt/discord-bots/update.sh"
+# Load secret from environment variable for security — fail immediately if unset
+GITHUB_SECRET = os.getenv("GITHUB_SECRET")
+if not GITHUB_SECRET:
+    raise RuntimeError("GITHUB_SECRET environment variable is not set. Refusing to start.")
+UPDATE_SCRIPT = "/opt/scanz-bot/update.sh"
 # ---------------------
 
+
 def verify_signature(payload_body, secret_token, signature_header):
-    if not signature_header: return False
-    hash_object = hmac.new(secret_token.encode('utf-8'), msg=payload_body, digestmod=hashlib.sha256)
+    if not signature_header:
+        return False
+    hash_object = hmac.new(secret_token.encode("utf-8"), msg=payload_body, digestmod=hashlib.sha256)
     expected_signature = "sha256=" + hash_object.hexdigest()
     return hmac.compare_digest(expected_signature, signature_header)
 
-@app.route('/deploy', methods=['POST'])
+
+@app.route("/deploy", methods=["POST"])
 def deploy():
-    signature = request.headers.get('X-Hub-Signature-256')
+    signature = request.headers.get("X-Hub-Signature-256")
     if not verify_signature(request.data, GITHUB_SECRET, signature):
         return jsonify({"message": "Invalid signature"}), 403
 
@@ -33,5 +39,6 @@ def deploy():
     except Exception as e:
         return jsonify({"message": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
