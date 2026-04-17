@@ -458,6 +458,9 @@ class RSIVerification(commands.Cog):
     )
     @app_commands.describe(role="The role that can use staff commands (e.g. Custodian).")
     @app_commands.default_permissions(administrator=True)
+    @app_commands.check(
+        lambda i: i.user and isinstance(i.user, discord.Member) and i.user.guild_permissions.administrator
+    )
     async def set_staff_role(self, interaction: discord.Interaction, role: discord.Role):
         """Set the staff role. Only users with Administrator can run this."""
         self._set_config("staff_role_id", str(role.id))
@@ -470,8 +473,7 @@ class RSIVerification(commands.Cog):
         embed = discord.Embed(
             title="Log Configuration Updated",
             description=(
-                f"**Action:** Staff Role set to {role.mention}\n"
-                f"**Staff:** {interaction.user.mention}"
+                f"**Action:** Staff Role set to {role.mention}\n**Staff:** {interaction.user.mention}"
             ),
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow(),
@@ -483,6 +485,9 @@ class RSIVerification(commands.Cog):
         description="Admin only: Clear the staff role so only Administrator can use staff commands.",
     )
     @app_commands.default_permissions(administrator=True)
+    @app_commands.check(
+        lambda i: i.user and isinstance(i.user, discord.Member) and i.user.guild_permissions.administrator
+    )
     async def clear_staff_role(self, interaction: discord.Interaction):
         """Clear the staff role. Only users with Administrator can run this."""
         self._set_config("staff_role_id", "")
@@ -501,8 +506,7 @@ class RSIVerification(commands.Cog):
         await self.bot.log_admin_action(embed)
 
     @app_commands.command(
-        name="set_main_role",
-        description="Set the role granted to verified Main Org members."
+        name="set_main_role", description="Set the role granted to verified Main Org members."
     )
     @app_commands.describe(role="The role to grant verified members (e.g. SCANZ Member).")
     @app_commands.check(has_staff_or_admin)
@@ -534,8 +538,7 @@ class RSIVerification(commands.Cog):
         embed = discord.Embed(
             title="Log Configuration Updated",
             description=(
-                f"**Action:** Affiliate role set to {role.mention}\n"
-                f"**Staff:** {interaction.user.mention}"
+                f"**Action:** Affiliate role set to {role.mention}\n**Staff:** {interaction.user.mention}"
             ),
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow(),
@@ -568,8 +571,7 @@ class RSIVerification(commands.Cog):
         embed = discord.Embed(
             title="Log Configuration Updated",
             description=(
-                f"**Action:** Unverified role set to {role.mention}\n"
-                f"**Staff:** {interaction.user.mention}"
+                f"**Action:** Unverified role set to {role.mention}\n**Staff:** {interaction.user.mention}"
             ),
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow(),

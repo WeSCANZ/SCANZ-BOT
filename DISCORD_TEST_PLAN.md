@@ -27,10 +27,11 @@ Manual test checklist. Run in order — later tests depend on earlier configurat
 | # | Action | Expected Result |
 |---|--------|----------------|
 | 2.1 `[A]` | `/set_staff_role role:@YourStaffRole` | Confirmation: *"✅ Staff role set to @YourStaffRole"* |
-| 2.2 `[U]` | Attempt `/set_main_role role:@SomeRole` (as a non-staff, non-admin user) | Bot replies: *"You don't have permission to use this command."* |
-| 2.3 `[S]` | Attempt `/set_main_role role:@SomeRole` (as a staff member) | Succeeds — confirms staff role check is working |
-| 2.4 `[A]` | `/clear_staff_role` | Confirmation: *"✅ Staff role cleared. Only Administrator can use staff commands."* |
-| 2.5 `[A]` | `/set_staff_role role:@YourStaffRole` | Re-set staff role for remaining tests |
+| 2.2 `[U]` | Attempt `/set_staff_role role:@SomeRole` (as a non-staff, non-admin user) | Bot replies: *"You don't have permission to use this command."* |
+| 2.3 `[U]` | Attempt `/set_main_role role:@SomeRole` (as a non-staff, non-admin user) | Bot replies: *"You don't have permission to use this command."* |
+| 2.4 `[S]` | Attempt `/set_main_role role:@SomeRole` (as a staff member) | Succeeds — confirms staff role check is working |
+| 2.5 `[A]` | `/clear_staff_role` | Confirmation: *"✅ Staff role cleared. Only Administrator can use staff commands."* |
+| 2.6 `[A]` | `/set_staff_role role:@YourStaffRole` | Re-set staff role for remaining tests |
 
 ---
 
