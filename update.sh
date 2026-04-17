@@ -9,5 +9,5 @@ git reset --hard origin/main
 # Update dependencies if they changed
 ./venv/bin/pip install -r requirements.txt
 # Restart the bot
-sudo systemctl restart "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 echo "Deployment complete."
