@@ -74,7 +74,7 @@ def deploy():
 
     # 4. Trigger Deployment
     try:
-        subprocess.run([UPDATE_SCRIPT, current_branch], check=True)
+        subprocess.run(["bash", UPDATE_SCRIPT, current_branch], check=True)
         return jsonify({"message": f"Deployment triggered for branch: {current_branch}"}), 200
     except Exception as e:
         return jsonify({"message": str(e)}), 500

@@ -13,8 +13,12 @@ cd "$BOT_DIR" || exit 1
 # Setup Safe Directory to prevent root/git permission errors in LXC
 git config --global --add safe.directory "$BOT_DIR"
 
+# Ensure scripts are executable for future runs
+chmod +x update.sh deploy/switch.sh deploy/update.sh 2>/dev/null || true
+
 # Hard Reset to match origin branch
 git fetch origin
+git checkout "$CURRENT_BRANCH"
 git reset --hard origin/$CURRENT_BRANCH
 
 # Application Updates

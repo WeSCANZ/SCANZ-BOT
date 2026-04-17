@@ -18,4 +18,4 @@ git checkout "$TARGET_BRANCH"
 git reset --hard "origin/$TARGET_BRANCH"
 
 echo "Successfully switched. Running update script..."
-/opt/scanz-bot/update.sh "$TARGET_BRANCH"
+bash /opt/scanz-bot/update.sh "$TARGET_BRANCH"
