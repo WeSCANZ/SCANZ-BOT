@@ -180,6 +180,10 @@ class RSIVerification(commands.Cog):
                 cursor.execute("ALTER TABLE rsi_links ADD COLUMN org_status TEXT DEFAULT 'None'")
             if "org_rank" not in col_names:
                 cursor.execute("ALTER TABLE rsi_links ADD COLUMN org_rank TEXT DEFAULT 'None'")
+            if "joined_org_at" not in col_names:
+                cursor.execute("ALTER TABLE rsi_links ADD COLUMN joined_org_at TEXT")
+            if "left_org_at" not in col_names:
+                cursor.execute("ALTER TABLE rsi_links ADD COLUMN left_org_at TEXT")
             conn.commit()
 
     def _set_config(self, key: str, value: str):
@@ -266,19 +270,43 @@ class RSIVerification(commands.Cog):
         org_status: str = "None",
         org_rank: str = "None",
     ):
+        from datetime import datetime, timezone
         # pick a default org if none supplied
         if not org:
             orgs = self._get_orgs()
             org = orgs[0] if orgs else ""
+            
+        now_iso = datetime.now(timezone.utc).isoformat() if org_status != "None" else None
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle, org_handle, org_status, org_rank)
-                VALUES (?, ?, ?, ?, ?)
-            """,
-                (discord_id, handle, org, org_status, org_rank),
-            )
+            
+            # Fetch existing to avoid overwriting joined_org_at on REPLACE
+            cursor.execute("PRAGMA table_info(rsi_links)")
+            cols = [c[1] for c in cursor.fetchall()]
+            
+            if "joined_org_at" in cols:
+                cursor.execute("SELECT joined_org_at FROM rsi_links WHERE discord_id = ? AND org_handle = ?", (discord_id, org))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    now_iso = row[0] # preserve existing join date
+            
+            if "joined_org_at" in cols:
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle, org_handle, org_status, org_rank, joined_org_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                    (discord_id, handle, org, org_status, org_rank, now_iso),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO rsi_links (discord_id, rsi_handle, org_handle, org_status, org_rank)
+                    VALUES (?, ?, ?, ?, ?)
+                """,
+                    (discord_id, handle, org, org_status, org_rank),
+                )
             conn.commit()
 
     async def _scrape_rsi_bio(self, handle: str, code: str) -> tuple[bool, str | dict]:
@@ -677,6 +705,66 @@ class RSIVerification(commands.Cog):
         # create view with selected organisation and send once
         view = ManualVerifyView(self, member, handle, code, target_org=chosen_org)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(
+        name="force_verify",
+        description="Admin only: Force verify a user without requiring a short bio code.",
+    )
+    @app_commands.describe(member="The Discord member", handle="The RSI Handle to link")
+    @app_commands.describe(org="Organisation symbol for this verification")
+    @app_commands.check(has_staff_or_admin)
+    @app_commands.autocomplete(org=org_autocomplete)
+    async def force_verify(
+        self, interaction: discord.Interaction, member: discord.Member, handle: str, org: str | None = None
+    ):
+        await interaction.response.defer(ephemeral=True)
+        # Determine organisation
+        orgs = self._get_orgs()
+        chosen_org = None
+        if org:
+            if org.upper() in orgs:
+                chosen_org = org.upper()
+            else:
+                await interaction.followup.send(
+                    f"❌ Unknown organisation `{org}`. Valid: {', '.join(orgs)}.",
+                    ephemeral=True,
+                )
+                return
+        else:
+            chosen_org = orgs[0] if orgs else None
+
+        # Bypass bio check, just check org status directly from RSI
+        org_status, org_rank = await self._check_org_status(handle, chosen_org)
+
+        self._link_account(
+            member.id,
+            handle,
+            chosen_org,
+            org_status,
+            org_rank,
+        )
+
+        # sync roles (will add verified role and remove needs-role)
+        await self.sync_member_roles(member)
+
+        # Log admin action
+        embed = discord.Embed(
+            title="Force Verification Completed",
+            description=(
+                f"**Member:** {member.mention} ({member.id})\n"
+                f"**RSI Handle:** `{handle}`\n"
+                f"**Org:** `{chosen_org}`\n"
+                f"**Staff:** {interaction.user.mention}"
+            ),
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        await self.bot.log_admin_action(embed)
+
+        await interaction.followup.send(
+            f"✅ Successfully force-verified and linked {member.mention} to `{handle}`.",
+            ephemeral=True,
+        )
 
     @app_commands.command(
         name="export_verified",

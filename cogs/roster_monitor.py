@@ -173,9 +173,9 @@ class RosterMonitor(commands.Cog):
 
         return list(set(handles))
 
-    @tasks.loop(hours=168)  # 1 week
+    @tasks.loop(hours=24)  # Daily
     async def roster_check_loop(self):
-        """Weekly background task to audit all configured organisations."""
+        """Daily background task to audit all configured organisations."""
         await self.bot.wait_until_ready()
 
         # Ensure the RSIVerification cog is loaded to guarantee database schema exists
@@ -245,16 +245,29 @@ class RosterMonitor(commands.Cog):
                         cursor = conn.cursor()
                         # Check if org_rank exists before update
                         cursor.execute("PRAGMA table_info(rsi_links)")
-                        if "org_rank" in [c[1] for c in cursor.fetchall()]:
-                            cursor.execute(
-                                "UPDATE rsi_links SET org_status = ?, org_rank = ? WHERE discord_id = ?",
-                                (new_status, new_rank, discord_id),
-                            )
-                        else:
-                            cursor.execute(
-                                "UPDATE rsi_links SET org_status = ? WHERE discord_id = ?",
-                                (new_status, discord_id),
-                            )
+                        cols = [c[1] for c in cursor.fetchall()]
+                        
+                        query_parts = ["org_status = ?"]
+                        params = [new_status]
+                        
+                        if "org_rank" in cols:
+                            query_parts.append("org_rank = ?")
+                            params.append(new_rank)
+                            
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        if "left_org_at" in cols and new_status == "None" and current_status != "None":
+                            query_parts.append("left_org_at = ?")
+                            params.append(now_iso)
+                        elif "joined_org_at" in cols and new_status != "None" and current_status == "None":
+                            query_parts.append("joined_org_at = ?")
+                            params.append(now_iso)
+                            if "left_org_at" in cols:
+                                query_parts.append("left_org_at = NULL")
+
+                        params.append(discord_id)
+                        query = f"UPDATE rsi_links SET {', '.join(query_parts)} WHERE discord_id = ?"
+                        
+                        cursor.execute(query, tuple(params))
                         conn.commit()
                 except Exception as e:
                     print(f"Failed to update org_status for {discord_id}: {e}")
