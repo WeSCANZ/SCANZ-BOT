@@ -271,26 +271,30 @@ class RSIVerification(commands.Cog):
         org_rank: str = "None",
     ):
         from datetime import datetime, timezone
+
         # pick a default org if none supplied
         if not org:
             orgs = self._get_orgs()
             org = orgs[0] if orgs else ""
-            
+
         now_iso = datetime.now(timezone.utc).isoformat() if org_status != "None" else None
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Fetch existing to avoid overwriting joined_org_at on REPLACE
             cursor.execute("PRAGMA table_info(rsi_links)")
             cols = [c[1] for c in cursor.fetchall()]
-            
+
             if "joined_org_at" in cols:
-                cursor.execute("SELECT joined_org_at FROM rsi_links WHERE discord_id = ? AND org_handle = ?", (discord_id, org))
+                cursor.execute(
+                    "SELECT joined_org_at FROM rsi_links WHERE discord_id = ? AND org_handle = ?",
+                    (discord_id, org),
+                )
                 row = cursor.fetchone()
                 if row and row[0]:
-                    now_iso = row[0] # preserve existing join date
-            
+                    now_iso = row[0]  # preserve existing join date
+
             if "joined_org_at" in cols:
                 cursor.execute(
                     """
@@ -355,7 +359,7 @@ class RSIVerification(commands.Cog):
             except Exception as e:
                 return False, f"Scraping error: {str(e)}"
 
-    async def _check_org_status(self, handle: str, target_org: str) -> tuple[str, str]:
+    async def _check_org_status(self, handle: str, target_org: str | None) -> tuple[str, str]:
         """Return (status, rank) based on the RSI profile.
         Status is 'Main', 'Affiliate', 'None', or 'Error'.
         Rank is the organization rank string or 'None'/'Error'.
@@ -947,58 +951,32 @@ class RSIVerification(commands.Cog):
             )
             return
 
-        messages = []
-
-        # Apply role based on status (but since this is manual, default to Guest or fetch status)
-        org_status = "Guest"
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT org_status FROM rsi_links WHERE discord_id = ?", (member.id,))
-            row = cursor.fetchone()
-            if row and row[0]:
-                org_status = row[0]
-
-        # We try to apply the correct role mapping
-        if org_status == "Main":
-            role_id_str = self._get_config("main_role_id")
-        elif org_status == "Affiliate":
-            role_id_str = self._get_config("affiliate_role_id")
-        else:
-            role_id_str = self._get_config("guest_role_id")
-        if role_id_str:
-            verified_role = interaction.guild.get_role(int(role_id_str))
-            if verified_role:
-                try:
-                    await member.add_roles(verified_role)
-                    messages.append(f"✅ Granted role {verified_role.mention}.")
-                except discord.Forbidden:
-                    messages.append(f"⚠️ Could not assign role `{verified_role.name}` (permission denied).")
-            else:
-                messages.append("⚠️ Configured role not found in server — check settings.")
-        else:
-            messages.append(f"⚠️ No appropriate role configured for status: {org_status}.")
+        await self.sync_member_roles(member)
 
         await interaction.response.send_message(
-            f"**Grant Verified: {member.display_name}** (`{rsi_handle}`)\n" + "\n".join(messages),
+            f"✅ Roles synced for **{member.display_name}** (`{rsi_handle}`).",
             ephemeral=True,
         )
 
     # helper to sync a member's roles based on their verification state
     async def sync_member_roles(self, member: discord.Member) -> None:
         guild = member.guild
-        scanz_role = guild.get_role(int(self._get_config("scanz_role_id") or 0))
 
         main_role = guild.get_role(int(self._get_config("main_role_id") or 0))
         affiliate_role = guild.get_role(int(self._get_config("affiliate_role_id") or 0))
         guest_role = guild.get_role(int(self._get_config("guest_role_id") or 0))
         unverified_role = guild.get_role(int(self._get_config("unverified_role_id") or 0))
 
-        # Check Verification DB
+        # Check Verification DB — pick highest-priority status (Main > Affiliate > other)
         org_status = None
         has_rsi_linked = False
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT org_status FROM rsi_links WHERE discord_id = ?", (member.id,))
+            cursor.execute(
+                "SELECT org_status FROM rsi_links WHERE discord_id = ? "
+                "ORDER BY CASE org_status WHEN 'Main' THEN 0 WHEN 'Affiliate' THEN 1 ELSE 2 END LIMIT 1",
+                (member.id,),
+            )
             row = cursor.fetchone()
             if row:
                 has_rsi_linked = True
@@ -1006,13 +984,13 @@ class RSIVerification(commands.Cog):
 
         to_add, to_remove = [], []
 
-        # Start with all org-related roles they currently have
+        # All managed roles (None entries filtered out)
         all_possible_roles = [
             r for r in [main_role, affiliate_role, guest_role, unverified_role] if r is not None
         ]
 
         if has_rsi_linked:
-            # Verified User - Ensure they get the role matching their status
+            # Verified — assign role matching their highest-priority status
             target_role = guest_role
             if org_status == "Main":
                 target_role = main_role
@@ -1025,19 +1003,13 @@ class RSIVerification(commands.Cog):
                 elif r != target_role and r in member.roles:
                     to_remove.append(r)
         else:
-            # Unverified User - strip org roles. Only give them unverified role
-            # if they have the 'SCANZ identifier' role or if server configured it.
+            # Unverified — strip any org roles, assign unverified_role
             for r in all_possible_roles:
                 if r == unverified_role:
-                    if scanz_role and scanz_role in member.roles and r not in member.roles:
+                    if r not in member.roles:
                         to_add.append(r)
-                else:
-                    if r in member.roles:
-                        to_remove.append(r)
-
-            # If no SCANZ identifier role exists, but they are unverified, give them unverified role.
-            if not scanz_role and unverified_role and unverified_role not in member.roles:
-                to_add.append(unverified_role)
+                elif r in member.roles:
+                    to_remove.append(r)
 
         if to_add:
             try:
@@ -1049,6 +1021,11 @@ class RSIVerification(commands.Cog):
                 await member.remove_roles(*to_remove, reason="Verification sync")
             except discord.Forbidden:
                 pass
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Assign unverified_role to new members who are not yet in the verification DB."""
+        await self.sync_member_roles(member)
 
     # configuration commands
     @app_commands.command(name="add_org", description="Add an RSI organisation/affiliate symbol")

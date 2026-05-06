@@ -202,18 +202,15 @@ class RosterMonitor(commands.Cog):
         verified_members = self._get_verified_links()
         if trigger_interaction:
             await trigger_interaction.followup.send("🔄 Syncing roles for guild members...", ephemeral=True)
-        # run role synchronization for everyone who has the SCANZ role; this will
-        # mark unverified members with the needs-verification role and clean up
-        # anyone who recently became verified.
+        # Sync roles for every non-bot guild member — assigns unverified_role to new/unverified
+        # members and ensures verified members hold the correct role.
         cog = typing.cast(typing.Any, self.bot.get_cog("RSIVerification"))
         if cog:
-            scanz_role_id = cog._get_config("scanz_role_id")
-            if scanz_role_id:
-                scanz_role = target_channel.guild.get_role(int(scanz_role_id))
-                if scanz_role:
-                    for member in scanz_role.members:
-                        await cog.sync_member_roles(member)
-                        await asyncio.sleep(0.5)
+            for member in target_channel.guild.members:
+                if member.bot:
+                    continue
+                await cog.sync_member_roles(member)
+                await asyncio.sleep(0.1)
 
         if not verified_members:
             if trigger_interaction:
@@ -246,14 +243,14 @@ class RosterMonitor(commands.Cog):
                         # Check if org_rank exists before update
                         cursor.execute("PRAGMA table_info(rsi_links)")
                         cols = [c[1] for c in cursor.fetchall()]
-                        
+
                         query_parts = ["org_status = ?"]
                         params = [new_status]
-                        
+
                         if "org_rank" in cols:
                             query_parts.append("org_rank = ?")
                             params.append(new_rank)
-                            
+
                         now_iso = datetime.now(timezone.utc).isoformat()
                         if "left_org_at" in cols and new_status == "None" and current_status != "None":
                             query_parts.append("left_org_at = ?")
@@ -264,9 +261,12 @@ class RosterMonitor(commands.Cog):
                             if "left_org_at" in cols:
                                 query_parts.append("left_org_at = NULL")
 
-                        params.append(discord_id)
-                        query = f"UPDATE rsi_links SET {', '.join(query_parts)} WHERE discord_id = ?"
-                        
+                        params.extend([discord_id, org])
+                        query = (
+                            f"UPDATE rsi_links SET {', '.join(query_parts)}"
+                            " WHERE discord_id = ? AND org_handle = ?"
+                        )
+
                         cursor.execute(query, tuple(params))
                         conn.commit()
                 except Exception as e:
@@ -463,10 +463,7 @@ class RosterMonitor(commands.Cog):
         # Log admin action
         embed_log = discord.Embed(
             title="Full Org Roster Sync Triggered",
-            description=(
-                f"**Org:** `{org or 'ALL'}`\n"
-                f"**Staff:** {interaction.user.mention}"
-            ),
+            description=(f"**Org:** `{org or 'ALL'}`\n**Staff:** {interaction.user.mention}"),
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow(),
         )
