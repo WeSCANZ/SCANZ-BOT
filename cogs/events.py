@@ -1,7 +1,7 @@
 import os
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import discord
 import pytz
@@ -97,8 +97,9 @@ def _parse_datetime(date_str: str) -> datetime | None:
                 break
 
     for fmt in (
-        "%Y-%m-%d %H:%M",
+        "%d-%m-%Y %H:%M",
         "%d/%m/%Y %H:%M",
+        "%Y-%m-%d %H:%M",
         "%Y-%m-%dT%H:%M",
         "%d %B %Y %H:%M",
         "%B %d %Y %H:%M",
@@ -110,6 +111,14 @@ def _parse_datetime(date_str: str) -> datetime | None:
         except ValueError:
             continue
     return None
+
+
+def _parse_duration(text: str) -> timedelta:
+    hours = re.search(r"(\d+)\s*h(?:ours?)?", text, re.IGNORECASE)
+    minutes = re.search(r"(\d+)\s*m(?:in(?:utes?)?)?", text, re.IGNORECASE)
+    h = int(hours.group(1)) if hours else 0
+    m = int(minutes.group(1)) if minutes else 0
+    return timedelta(hours=h, minutes=m) if (h or m) else timedelta(hours=2)
 
 
 def _parse_roles(text: str) -> list[dict]:
@@ -310,8 +319,8 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         max_length=100,
     )
     datetime_input = discord.ui.TextInput(
-        label="Date & Time",
-        placeholder="2026-05-12 04:00 AWST  (or UTC, ICT, SGT, UTC+8 …)",
+        label="Date & Time (DD-MM-YYYY HH:MM TIMEZONE)",
+        placeholder="12-05-2026 04:00 AWST  (or UTC, ICT, SGT, UTC+8 …)",
         max_length=60,
     )
     duration = discord.ui.TextInput(
@@ -399,6 +408,20 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         )
         conn.commit()
         conn.close()
+
+        # Create a Discord native scheduled event so it shows in the Events tab
+        duration_delta = _parse_duration(self.duration.value) if self.duration.value else timedelta(hours=2)
+        try:
+            await interaction.guild.create_scheduled_event(
+                name=self.event_title.value,
+                start_time=dt,
+                end_time=dt + duration_delta,
+                entity_type=discord.EntityType.external,
+                location=self.location.value or "Star Citizen",
+                privacy_level=discord.PrivacyLevel.guild_only,
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            pass  # Bot lacks Manage Events permission — embed-only is fine
 
         await interaction.followup.send(f"Event created! [Jump to event]({msg.jump_url})", ephemeral=True)
 

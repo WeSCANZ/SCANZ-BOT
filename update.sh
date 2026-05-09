@@ -25,5 +25,5 @@ git reset --hard origin/$CURRENT_BRANCH
 ./venv/bin/pip install -r requirements.txt
 
 # Service Restart
-sudo systemctl restart "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 echo "Deployment complete for branch: $CURRENT_BRANCH"
