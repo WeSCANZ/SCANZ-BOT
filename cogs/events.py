@@ -46,6 +46,7 @@ def _init_db():
             guild_id    INTEGER NOT NULL,
             channel_id  INTEGER,
             message_id  INTEGER,
+            scheduled_event_id INTEGER,
             creator_id  INTEGER NOT NULL,
             title       TEXT NOT NULL,
             description TEXT DEFAULT '',
@@ -81,7 +82,11 @@ def _init_db():
 
     # Schema migrations - add new columns if they don't exist
     cursor = conn.cursor()
-    for col_name, col_type in [("description", "TEXT DEFAULT ''"), ("image_url", "TEXT DEFAULT ''")]:
+    for col_name, col_type in [
+        ("description", "TEXT DEFAULT ''"),
+        ("image_url", "TEXT DEFAULT ''"),
+        ("scheduled_event_id", "INTEGER"),
+    ]:
         try:
             cursor.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
             conn.commit()
@@ -146,6 +151,35 @@ def _parse_roles(text: str) -> list[dict]:
                 part = name.strip()
         roles.append({"name": part, "max_slots": max_slots, "order": i})
     return roles
+
+
+async def _create_discord_scheduled_event(
+    interaction: discord.Interaction,
+    *,
+    title: str,
+    description: str,
+    start_time: datetime,
+    location: str,
+) -> tuple[discord.ScheduledEvent | None, str | None]:
+    if not interaction.guild:
+        return None, "Discord scheduled event skipped: this command was not used in a server."
+
+    try:
+        event = await interaction.guild.create_scheduled_event(
+            name=title[:100],
+            description=(description or None),
+            start_time=start_time,
+            end_time=start_time + timedelta(hours=2),
+            entity_type=discord.EntityType.external,
+            privacy_level=discord.PrivacyLevel.guild_only,
+            location=(location or "Online")[:100],
+            reason=f"Created by {interaction.user} via /create_event",
+        )
+        return event, None
+    except discord.Forbidden:
+        return None, "Discord scheduled event was not created: the bot needs the Manage Events permission."
+    except discord.HTTPException as e:
+        return None, f"Discord scheduled event was not created: {e.text or str(e)}"
 
 
 def _build_embed(event: dict, roles: list[dict], rsvps_by_role: dict[int, list[str]]) -> discord.Embed:
@@ -235,7 +269,11 @@ class EventRSVPSelect(discord.ui.Select):
             discord.SelectOption(
                 label=r["role_name"][:100],
                 value=str(r["id"]),
-                description=(f"Max: {r['max_slots']} slots" if r.get("max_slots") else "Unlimited slots")[:100],
+                description=(
+                    f"Max: {r['max_slots']} slots"
+                    if r.get("max_slots")
+                    else "Unlimited slots"
+                )[:100],
             )
             for r in roles[:25]
         ]
@@ -274,7 +312,9 @@ class EventRSVPSelect(discord.ui.Select):
         conn.execute(
             """
             INSERT INTO event_rsvps (event_id, user_id, role_id, rsvp_time) VALUES (?, ?, ?, ?)
-            ON CONFLICT(event_id, user_id) DO UPDATE SET role_id=excluded.role_id, rsvp_time=excluded.rsvp_time
+            ON CONFLICT(event_id, user_id) DO UPDATE SET
+                role_id=excluded.role_id,
+                rsvp_time=excluded.rsvp_time
             """,
             (self.event_id, interaction.user.id, role_id, datetime.utcnow().isoformat()),
         )
@@ -306,7 +346,10 @@ class EventUnRSVPButton(discord.ui.Button):
         conn.close()
 
         if not affected:
-            return await interaction.response.send_message("You're not signed up for this event.", ephemeral=True)
+            return await interaction.response.send_message(
+                "You're not signed up for this event.",
+                ephemeral=True,
+            )
 
         await interaction.response.send_message("You've been removed from the event.", ephemeral=True)
         await _update_event_message(interaction.client, interaction.guild, self.event_id)
@@ -384,7 +427,11 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
 
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO events (guild_id, creator_id, title, description, start_time, location, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO events (
+                    guild_id, creator_id, title, description, start_time, location, image_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     interaction.guild_id,
                     interaction.user.id,
@@ -399,7 +446,11 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
 
             for rd in roles_data:
                 cursor.execute(
-                    "INSERT INTO event_roles (event_id, role_name, max_slots, display_order) VALUES (?, ?, ?, ?)",
+                    """
+                    INSERT INTO event_roles (
+                        event_id, role_name, max_slots, display_order
+                    ) VALUES (?, ?, ?, ?)
+                    """,
                     (event_id, rd["name"], rd.get("max_slots"), rd["order"]),
                 )
             conn.commit()
@@ -415,15 +466,33 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
             embed = _build_embed(event, db_roles, {})
             view = EventView(event_id, db_roles)
             msg = await target_channel.send(embed=embed, view=view)
+            scheduled_event, scheduled_event_warning = await _create_discord_scheduled_event(
+                interaction,
+                title=self.event_title.value,
+                description=self.description.value or "",
+                start_time=dt,
+                location=self.location.value or "",
+            )
 
             conn.execute(
-                "UPDATE events SET message_id = ?, channel_id = ? WHERE id = ?",
-                (msg.id, msg.channel.id, event_id),
+                "UPDATE events SET message_id = ?, channel_id = ?, scheduled_event_id = ? WHERE id = ?",
+                (
+                    msg.id,
+                    msg.channel.id,
+                    scheduled_event.id if scheduled_event else None,
+                    event_id,
+                ),
             )
             conn.commit()
             conn.close()
 
-            await interaction.followup.send(f"Event created! [Jump to event]({msg.jump_url})", ephemeral=True)
+            response = f"Event created! [Jump to event]({msg.jump_url})"
+            if scheduled_event:
+                response += f"\nDiscord event created: {scheduled_event.url}"
+            elif scheduled_event_warning:
+                response += f"\n{scheduled_event_warning}"
+
+            await interaction.followup.send(response, ephemeral=True)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
@@ -486,7 +555,10 @@ class EventCog(commands.Cog):
             return await interaction.response.send_message("Event not found.", ephemeral=True)
         if event["status"] != "active":
             conn.close()
-            return await interaction.response.send_message("Event is already cancelled or completed.", ephemeral=True)
+            return await interaction.response.send_message(
+                "Event is already cancelled or completed.",
+                ephemeral=True,
+            )
 
         conn.execute("UPDATE events SET status = 'cancelled' WHERE id = ?", (event_id,))
         conn.commit()
@@ -506,6 +578,13 @@ class EventCog(commands.Cog):
                 except (discord.NotFound, discord.Forbidden):
                     pass
 
+        if event.get("scheduled_event_id"):
+            try:
+                scheduled_event = await interaction.guild.fetch_scheduled_event(event["scheduled_event_id"])
+                await scheduled_event.delete(reason=f"Cancelled by {interaction.user} via /cancel_event")
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
         await interaction.response.send_message(f"Event #{event_id} has been cancelled.", ephemeral=True)
 
     @app_commands.command(name="set_event_image", description="Set an image for an existing event")
@@ -521,7 +600,10 @@ class EventCog(commands.Cog):
         conn.close()
 
         if result.rowcount == 0:
-            return await interaction.response.send_message("Event not found or already inactive.", ephemeral=True)
+            return await interaction.response.send_message(
+                "Event not found or already inactive.",
+                ephemeral=True,
+            )
 
         await interaction.response.send_message("Image updated!", ephemeral=True)
         await _update_event_message(self.bot, interaction.guild, event_id)
@@ -539,7 +621,10 @@ class EventCog(commands.Cog):
         conn.close()
 
         if result.rowcount == 0:
-            return await interaction.response.send_message("Event not found or already inactive.", ephemeral=True)
+            return await interaction.response.send_message(
+                "Event not found or already inactive.",
+                ephemeral=True,
+            )
 
         await interaction.response.send_message(f"Duration updated to `{duration}`!", ephemeral=True)
 
@@ -558,13 +643,21 @@ class EventCog(commands.Cog):
         conn.commit()
         conn.close()
 
-        await interaction.response.send_message(f"Events will now be posted in {channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Events will now be posted in {channel.mention}.",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="list_events", description="List upcoming active events")
     async def list_events(self, interaction: discord.Interaction):
         conn = _get_db()
         events = conn.execute(
-            "SELECT id, title, start_time, location FROM events WHERE guild_id = ? AND status = 'active' ORDER BY start_time",
+            """
+            SELECT id, title, start_time, location
+            FROM events
+            WHERE guild_id = ? AND status = 'active'
+            ORDER BY start_time
+            """,
             (interaction.guild_id,),
         ).fetchall()
         conn.close()
