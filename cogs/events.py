@@ -75,7 +75,8 @@ def _init_db():
         );
         CREATE TABLE IF NOT EXISTS event_config (
             guild_id          INTEGER PRIMARY KEY,
-            events_channel_id INTEGER
+            events_channel_id INTEGER,
+            event_manager_role_id INTEGER
         );
     """)
     conn.commit()
@@ -93,7 +94,33 @@ def _init_db():
         except sqlite3.OperationalError:
             pass  # Column already exists
 
+    try:
+        cursor.execute("ALTER TABLE event_config ADD COLUMN event_manager_role_id INTEGER")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.close()
+
+
+async def _has_event_manager_or_admin(interaction: discord.Interaction) -> bool:
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
+        return False
+    if interaction.user.guild_permissions.administrator:
+        return True
+
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT event_manager_role_id FROM event_config WHERE guild_id = ?",
+        (interaction.guild_id,),
+    ).fetchone()
+    conn.close()
+
+    if row and row["event_manager_role_id"]:
+        role = interaction.guild.get_role(row["event_manager_role_id"])
+        return bool(role and role in interaction.user.roles)
+
+    return await has_staff_or_admin(interaction)
 
 
 def _parse_datetime(date_str: str) -> datetime | None:
@@ -180,6 +207,76 @@ async def _create_discord_scheduled_event(
         return None, "Discord scheduled event was not created: the bot needs the Manage Events permission."
     except discord.HTTPException as e:
         return None, f"Discord scheduled event was not created: {e.text or str(e)}"
+
+
+async def _edit_discord_scheduled_event(
+    guild: discord.Guild,
+    event: dict,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    start_time: datetime | None = None,
+    duration: timedelta | None = None,
+    location: str | None = None,
+    reason: str | None = None,
+) -> str | None:
+    if not event.get("scheduled_event_id"):
+        return None
+
+    try:
+        scheduled_event = await guild.fetch_scheduled_event(event["scheduled_event_id"])
+        new_start = start_time or datetime.fromisoformat(event["start_time"])
+        kwargs = {
+            "name": title[:100] if title is not None else event["title"][:100],
+            "description": description if description is not None else event.get("description") or None,
+            "start_time": new_start,
+            "end_time": new_start + (duration or _parse_duration(event.get("duration") or "")),
+            "location": (location if location is not None else event.get("location") or "Online")[:100],
+            "reason": reason,
+        }
+        await scheduled_event.edit(**kwargs)
+        return None
+    except discord.Forbidden:
+        return "Discord scheduled event was not updated: the bot needs the Manage Events permission."
+    except (discord.NotFound, discord.HTTPException) as e:
+        return f"Discord scheduled event was not updated: {getattr(e, 'text', str(e))}"
+
+
+async def _active_event_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[int]]:
+    if not interaction.guild_id:
+        return []
+
+    conn = _get_db()
+    rows = conn.execute(
+        """
+        SELECT id, title, start_time
+        FROM events
+        WHERE guild_id = ? AND status = 'active'
+        ORDER BY start_time
+        """,
+        (interaction.guild_id,),
+    ).fetchall()
+    conn.close()
+
+    current = current.lower()
+    choices = []
+    for row in rows:
+        label = f"#{row['id']} - {row['title']}"
+        if current and current not in label.lower():
+            continue
+        try:
+            dt = datetime.fromisoformat(row["start_time"])
+            label = f"{label} ({dt.strftime('%d-%m %H:%M')})"
+        except ValueError:
+            pass
+        choices.append(app_commands.Choice(name=label[:100], value=row["id"]))
+        if len(choices) >= 25:
+            break
+
+    return choices
 
 
 def _build_embed(event: dict, roles: list[dict], rsvps_by_role: dict[int, list[str]]) -> discord.Embed:
@@ -537,13 +634,14 @@ class EventCog(commands.Cog):
     # ── Commands ──────────────────────────────────────────────────────────────
 
     @app_commands.command(name="create_event", description="Create a new org event with RSVP roles")
-    @app_commands.check(has_staff_or_admin)
+    @app_commands.check(_has_event_manager_or_admin)
     async def create_event(self, interaction: discord.Interaction):
         await interaction.response.send_modal(EventCreateModal())
 
     @app_commands.command(name="cancel_event", description="Cancel an active event")
     @app_commands.describe(event_id="The event ID to cancel")
-    @app_commands.check(has_staff_or_admin)
+    @app_commands.autocomplete(event_id=_active_event_autocomplete)
+    @app_commands.check(_has_event_manager_or_admin)
     async def cancel_event(self, interaction: discord.Interaction, event_id: int):
         conn = _get_db()
         event = conn.execute(
@@ -587,9 +685,110 @@ class EventCog(commands.Cog):
 
         await interaction.response.send_message(f"Event #{event_id} has been cancelled.", ephemeral=True)
 
+    @app_commands.command(name="edit_event", description="Edit an active event")
+    @app_commands.describe(
+        event_id="Event to edit",
+        title="New event title",
+        date_time="New date/time, e.g. 12-05-2026 04:00 AWST",
+        location="New location",
+        description="New description",
+        duration="New duration, e.g. 2 hours 30 minutes",
+        image_url="New image URL for the RSVP embed",
+    )
+    @app_commands.autocomplete(event_id=_active_event_autocomplete)
+    @app_commands.check(_has_event_manager_or_admin)
+    async def edit_event(
+        self,
+        interaction: discord.Interaction,
+        event_id: int,
+        title: str | None = None,
+        date_time: str | None = None,
+        location: str | None = None,
+        description: str | None = None,
+        duration: str | None = None,
+        image_url: str | None = None,
+    ):
+        if not any([title, date_time, location, description, duration, image_url]):
+            return await interaction.response.send_message(
+                "Give me at least one field to update.",
+                ephemeral=True,
+            )
+
+        new_start_time = None
+        if date_time:
+            new_start_time = _parse_datetime(date_time)
+            if not new_start_time:
+                return await interaction.response.send_message(
+                    "Could not parse the date/time. Example: `12-05-2026 04:00 AWST`",
+                    ephemeral=True,
+                )
+
+        await interaction.response.defer(ephemeral=True)
+
+        conn = _get_db()
+        event_row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND guild_id = ? AND status = 'active'",
+            (event_id, interaction.guild_id),
+        ).fetchone()
+        if not event_row:
+            conn.close()
+            return await interaction.followup.send("Event not found or already inactive.", ephemeral=True)
+
+        event = dict(event_row)
+        updated_title = title if title is not None else event["title"]
+        updated_description = description if description is not None else event.get("description") or ""
+        updated_start = new_start_time.isoformat() if new_start_time else event["start_time"]
+        updated_location = location if location is not None else event.get("location") or ""
+        updated_duration = duration if duration is not None else event.get("duration") or ""
+        updated_image_url = image_url if image_url is not None else event.get("image_url") or ""
+
+        conn.execute(
+            """
+            UPDATE events
+            SET title = ?, description = ?, start_time = ?, location = ?, duration = ?, image_url = ?
+            WHERE id = ?
+            """,
+            (
+                updated_title,
+                updated_description,
+                updated_start,
+                updated_location,
+                updated_duration,
+                updated_image_url,
+                event_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        await _update_event_message(self.bot, interaction.guild, event_id)
+        warning = await _edit_discord_scheduled_event(
+            interaction.guild,
+            {
+                **event,
+                "title": updated_title,
+                "description": updated_description,
+                "start_time": updated_start,
+                "location": updated_location,
+                "duration": updated_duration,
+            },
+            title=updated_title,
+            description=updated_description,
+            start_time=new_start_time,
+            duration=_parse_duration(updated_duration),
+            location=updated_location,
+            reason=f"Edited by {interaction.user} via /edit_event",
+        )
+
+        response = f"Event #{event_id} updated."
+        if warning:
+            response += f"\n{warning}"
+        await interaction.followup.send(response, ephemeral=True)
+
     @app_commands.command(name="set_event_image", description="Set an image for an existing event")
     @app_commands.describe(event_id="Event ID", image_url="Direct URL to the image")
-    @app_commands.check(has_staff_or_admin)
+    @app_commands.autocomplete(event_id=_active_event_autocomplete)
+    @app_commands.check(_has_event_manager_or_admin)
     async def set_event_image(self, interaction: discord.Interaction, event_id: int, image_url: str):
         conn = _get_db()
         result = conn.execute(
@@ -610,27 +809,39 @@ class EventCog(commands.Cog):
 
     @app_commands.command(name="set_event_duration", description="Set or override the duration of an event")
     @app_commands.describe(event_id="Event ID", duration="Duration (e.g. '2 hours 30 minutes')")
-    @app_commands.check(has_staff_or_admin)
+    @app_commands.autocomplete(event_id=_active_event_autocomplete)
+    @app_commands.check(_has_event_manager_or_admin)
     async def set_event_duration(self, interaction: discord.Interaction, event_id: int, duration: str):
         conn = _get_db()
-        result = conn.execute(
-            "UPDATE events SET duration = ? WHERE id = ? AND guild_id = ? AND status = 'active'",
-            (duration, event_id, interaction.guild_id),
-        )
+        event = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND guild_id = ? AND status = 'active'",
+            (event_id, interaction.guild_id),
+        ).fetchone()
+        if event:
+            conn.execute("UPDATE events SET duration = ? WHERE id = ?", (duration, event_id))
         conn.commit()
         conn.close()
 
-        if result.rowcount == 0:
+        if not event:
             return await interaction.response.send_message(
                 "Event not found or already inactive.",
                 ephemeral=True,
             )
 
-        await interaction.response.send_message(f"Duration updated to `{duration}`!", ephemeral=True)
+        warning = await _edit_discord_scheduled_event(
+            interaction.guild,
+            dict(event),
+            duration=_parse_duration(duration),
+            reason=f"Duration updated by {interaction.user} via /set_event_duration",
+        )
+        response = f"Duration updated to `{duration}`!"
+        if warning:
+            response += f"\n{warning}"
+        await interaction.response.send_message(response, ephemeral=True)
 
     @app_commands.command(name="set_events_channel", description="Set the default channel for posting events")
     @app_commands.describe(channel="Channel where events will be posted")
-    @app_commands.check(has_staff_or_admin)
+    @app_commands.check(_has_event_manager_or_admin)
     async def set_events_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         conn = _get_db()
         conn.execute(
@@ -645,6 +856,57 @@ class EventCog(commands.Cog):
 
         await interaction.response.send_message(
             f"Events will now be posted in {channel.mention}.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="set_event_manager_role",
+        description="Admin only: Set the role that can manage bot events",
+    )
+    @app_commands.describe(role="Role that can create, edit, cancel, and configure bot events")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(
+        lambda i: i.user and isinstance(i.user, discord.Member) and i.user.guild_permissions.administrator
+    )
+    async def set_event_manager_role(self, interaction: discord.Interaction, role: discord.Role):
+        conn = _get_db()
+        conn.execute(
+            """
+            INSERT INTO event_config (guild_id, event_manager_role_id) VALUES (?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET event_manager_role_id = excluded.event_manager_role_id
+            """,
+            (interaction.guild_id, role.id),
+        )
+        conn.commit()
+        conn.close()
+
+        await interaction.response.send_message(
+            f"Event manager role set to {role.mention}.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="clear_event_manager_role",
+        description="Admin only: Fall back to the normal staff role for event commands",
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(
+        lambda i: i.user and isinstance(i.user, discord.Member) and i.user.guild_permissions.administrator
+    )
+    async def clear_event_manager_role(self, interaction: discord.Interaction):
+        conn = _get_db()
+        conn.execute(
+            """
+            INSERT INTO event_config (guild_id, event_manager_role_id) VALUES (?, NULL)
+            ON CONFLICT(guild_id) DO UPDATE SET event_manager_role_id = NULL
+            """,
+            (interaction.guild_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        await interaction.response.send_message(
+            "Event manager role cleared. Event commands now use the normal staff/admin rule.",
             ephemeral=True,
         )
 
