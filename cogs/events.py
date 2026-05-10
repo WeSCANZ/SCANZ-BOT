@@ -78,6 +78,16 @@ def _init_db():
         );
     """)
     conn.commit()
+
+    # Schema migrations - add new columns if they don't exist
+    cursor = conn.cursor()
+    for col_name, col_type in [("description", "TEXT DEFAULT ''"), ("image_url", "TEXT DEFAULT ''")]:
+        try:
+            cursor.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     conn.close()
 
 
