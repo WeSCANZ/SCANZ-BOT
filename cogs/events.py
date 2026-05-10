@@ -347,12 +347,6 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         required=False,
         max_length=500,
     )
-    image_url = discord.ui.TextInput(
-        label="Image URL (optional)",
-        placeholder="https://example.com/image.jpg",
-        required=False,
-        max_length=200,
-    )
     roles_input = discord.ui.TextInput(
         label="Roles  (Name:slots or Name, comma-separated)",
         placeholder="Salvage|Reclaimer:3, Logistics:6, Combat:6, Put me anywhere!",
@@ -398,7 +392,7 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
                     self.description.value or "",
                     dt.isoformat(),
                     self.location.value or "",
-                    self.image_url.value or "",
+                    "",
                 ),
             )
             event_id = cursor.lastrowid
