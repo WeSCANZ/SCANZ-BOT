@@ -48,6 +48,7 @@ def _init_db():
             message_id  INTEGER,
             creator_id  INTEGER NOT NULL,
             title       TEXT NOT NULL,
+            description TEXT DEFAULT '',
             start_time  TEXT NOT NULL,
             duration    TEXT DEFAULT '',
             location    TEXT DEFAULT '',
@@ -140,15 +141,15 @@ def _parse_roles(text: str) -> list[dict]:
 def _build_embed(event: dict, roles: list[dict], rsvps_by_role: dict[int, list[str]]) -> discord.Embed:
     embed = discord.Embed(title=event["title"], color=0x5865F2)
 
+    if event.get("description"):
+        embed.description = event["description"]
+
     try:
         dt = datetime.fromisoformat(event["start_time"])
         ts = int(dt.timestamp())
         embed.add_field(name="Time (Your Timezone)", value=f"<t:{ts}:F>\n<t:{ts}:R>", inline=True)
     except Exception:
         embed.add_field(name="Time", value=event["start_time"], inline=True)
-
-    if event.get("duration"):
-        embed.add_field(name="Duration", value=event["duration"], inline=True)
 
     if event.get("location"):
         embed.add_field(name="Location", value=event["location"], inline=False)
@@ -323,17 +324,24 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         placeholder="12-05-2026 04:00 AWST  (or UTC, ICT, SGT, UTC+8 …)",
         max_length=60,
     )
-    duration = discord.ui.TextInput(
-        label="Duration",
-        placeholder="2 hours 30 minutes",
-        required=False,
-        max_length=60,
-    )
     location = discord.ui.TextInput(
         label="Location",
         placeholder="Nyx > Stanton Gateway",
         required=False,
         max_length=100,
+    )
+    description = discord.ui.TextInput(
+        label="Description (optional)",
+        placeholder="Event details, objectives, requirements, etc.",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=500,
+    )
+    image_url = discord.ui.TextInput(
+        label="Image URL (optional)",
+        placeholder="https://example.com/image.jpg",
+        required=False,
+        max_length=200,
     )
     roles_input = discord.ui.TextInput(
         label="Roles  (Name:slots or Name, comma-separated)",
@@ -349,8 +357,8 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         if not dt:
             return await interaction.followup.send(
                 "Could not parse the date/time.\n"
-                "Use format: `YYYY-MM-DD HH:MM TIMEZONE`\n"
-                "Example: `2026-05-12 04:00 AWST` or `2026-05-12 04:00 UTC+8`",
+                "Use format: `DD-MM-YYYY HH:MM TIMEZONE`\n"
+                "Example: `12-05-2026 04:00 AWST` or `12-05-2026 04:00 UTC+8`",
                 ephemeral=True,
             )
 
@@ -371,14 +379,15 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
 
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO events (guild_id, creator_id, title, start_time, duration, location) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO events (guild_id, creator_id, title, description, start_time, location, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 interaction.guild_id,
                 interaction.user.id,
                 self.event_title.value,
+                self.description.value or "",
                 dt.isoformat(),
-                self.duration.value or "",
                 self.location.value or "",
+                self.image_url.value or "",
             ),
         )
         event_id = cursor.lastrowid
@@ -410,14 +419,15 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         conn.close()
 
         # Create a Discord native scheduled event so it shows in the Events tab
-        duration_delta = _parse_duration(self.duration.value) if self.duration.value else timedelta(hours=2)
+        duration_delta = timedelta(hours=2)
         try:
-            await interaction.guild.create_scheduled_event(
+            event_obj = await interaction.guild.create_scheduled_event(
                 name=self.event_title.value,
                 start_time=dt,
                 end_time=dt + duration_delta,
                 entity_type=discord.EntityType.external,
                 location=self.location.value or "Star Citizen",
+                description=self.description.value or "",
                 privacy_level=discord.PrivacyLevel.guild_only,
             )
         except (discord.Forbidden, discord.HTTPException):
@@ -522,6 +532,23 @@ class EventCog(commands.Cog):
 
         await interaction.response.send_message("Image updated!", ephemeral=True)
         await _update_event_message(self.bot, interaction.guild, event_id)
+
+    @app_commands.command(name="set_event_duration", description="Set or override the duration of an event")
+    @app_commands.describe(event_id="Event ID", duration="Duration (e.g. '2 hours 30 minutes')")
+    @app_commands.check(has_staff_or_admin)
+    async def set_event_duration(self, interaction: discord.Interaction, event_id: int, duration: str):
+        conn = _get_db()
+        result = conn.execute(
+            "UPDATE events SET duration = ? WHERE id = ? AND guild_id = ? AND status = 'active'",
+            (duration, event_id, interaction.guild_id),
+        )
+        conn.commit()
+        conn.close()
+
+        if result.rowcount == 0:
+            return await interaction.response.send_message("Event not found or already inactive.", ephemeral=True)
+
+        await interaction.response.send_message(f"Duration updated to `{duration}`!", ephemeral=True)
 
     @app_commands.command(name="set_events_channel", description="Set the default channel for posting events")
     @app_commands.describe(channel="Channel where events will be posted")
