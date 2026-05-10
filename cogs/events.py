@@ -428,21 +428,6 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
         conn.commit()
         conn.close()
 
-        # Create a Discord native scheduled event so it shows in the Events tab
-        duration_delta = timedelta(hours=2)
-        try:
-            event_obj = await interaction.guild.create_scheduled_event(
-                name=self.event_title.value,
-                start_time=dt,
-                end_time=dt + duration_delta,
-                entity_type=discord.EntityType.external,
-                location=self.location.value or "Star Citizen",
-                description=self.description.value or "",
-                privacy_level=discord.PrivacyLevel.guild_only,
-            )
-        except Exception:
-            pass  # Failed to create Discord event, but embed still posted — that's fine
-
         await interaction.followup.send(f"Event created! [Jump to event]({msg.jump_url})", ephemeral=True)
 
 
