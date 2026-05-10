@@ -440,8 +440,8 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
                 description=self.description.value or "",
                 privacy_level=discord.PrivacyLevel.guild_only,
             )
-        except (discord.Forbidden, discord.HTTPException):
-            pass  # Bot lacks Manage Events permission — embed-only is fine
+        except Exception:
+            pass  # Failed to create Discord event, but embed still posted — that's fine
 
         await interaction.followup.send(f"Event created! [Jump to event]({msg.jump_url})", ephemeral=True)
 
