@@ -4,8 +4,8 @@
 BOT_DIR="/opt/scanz-bot"
 SERVICE_NAME="scanz-bot"
 
-# Branch is passed from the webhook listener, or default to main
-CURRENT_BRANCH=${1:-main}
+# Branch is passed from the webhook listener, or fall back to current git HEAD
+CURRENT_BRANCH=${1:-$(git -C "$BOT_DIR" rev-parse --abbrev-ref HEAD)}
 
 echo "Starting deployment for branch: $CURRENT_BRANCH"
 cd "$BOT_DIR" || exit 1
