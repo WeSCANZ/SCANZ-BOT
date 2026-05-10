@@ -361,74 +361,78 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
 
-        dt = _parse_datetime(self.datetime_input.value)
-        if not dt:
-            return await interaction.followup.send(
-                "Could not parse the date/time.\n"
-                "Use format: `DD-MM-YYYY HH:MM TIMEZONE`\n"
-                "Example: `12-05-2026 04:00 AWST` or `12-05-2026 04:00 UTC+8`",
-                ephemeral=True,
-            )
+            dt = _parse_datetime(self.datetime_input.value)
+            if not dt:
+                return await interaction.followup.send(
+                    "Could not parse the date/time.\n"
+                    "Use format: `DD-MM-YYYY HH:MM TIMEZONE`\n"
+                    "Example: `12-05-2026 04:00 AWST` or `12-05-2026 04:00 UTC+8`",
+                    ephemeral=True,
+                )
 
-        roles_data = _parse_roles(self.roles_input.value)
-        if not roles_data:
-            return await interaction.followup.send("No valid roles found.", ephemeral=True)
+            roles_data = _parse_roles(self.roles_input.value)
+            if not roles_data:
+                return await interaction.followup.send("No valid roles found.", ephemeral=True)
 
-        conn = _get_db()
-        config = conn.execute(
-            "SELECT events_channel_id FROM event_config WHERE guild_id = ?", (interaction.guild_id,)
-        ).fetchone()
+            conn = _get_db()
+            config = conn.execute(
+                "SELECT events_channel_id FROM event_config WHERE guild_id = ?", (interaction.guild_id,)
+            ).fetchone()
 
-        target_channel = None
-        if config and config["events_channel_id"]:
-            target_channel = interaction.guild.get_channel(config["events_channel_id"])
-        if not target_channel:
-            target_channel = interaction.channel
+            target_channel = None
+            if config and config["events_channel_id"]:
+                target_channel = interaction.guild.get_channel(config["events_channel_id"])
+            if not target_channel:
+                target_channel = interaction.channel
 
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO events (guild_id, creator_id, title, description, start_time, location, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                interaction.guild_id,
-                interaction.user.id,
-                self.event_title.value,
-                self.description.value or "",
-                dt.isoformat(),
-                self.location.value or "",
-                self.image_url.value or "",
-            ),
-        )
-        event_id = cursor.lastrowid
-
-        for rd in roles_data:
+            cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO event_roles (event_id, role_name, max_slots, display_order) VALUES (?, ?, ?, ?)",
-                (event_id, rd["name"], rd.get("max_slots"), rd["order"]),
+                "INSERT INTO events (guild_id, creator_id, title, description, start_time, location, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    interaction.guild_id,
+                    interaction.user.id,
+                    self.event_title.value,
+                    self.description.value or "",
+                    dt.isoformat(),
+                    self.location.value or "",
+                    self.image_url.value or "",
+                ),
             )
-        conn.commit()
+            event_id = cursor.lastrowid
 
-        db_roles = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT * FROM event_roles WHERE event_id = ? ORDER BY display_order", (event_id,)
-            ).fetchall()
-        ]
-        event = dict(conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone())
+            for rd in roles_data:
+                cursor.execute(
+                    "INSERT INTO event_roles (event_id, role_name, max_slots, display_order) VALUES (?, ?, ?, ?)",
+                    (event_id, rd["name"], rd.get("max_slots"), rd["order"]),
+                )
+            conn.commit()
 
-        embed = _build_embed(event, db_roles, {})
-        view = EventView(event_id, db_roles)
-        msg = await target_channel.send(embed=embed, view=view)
+            db_roles = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM event_roles WHERE event_id = ? ORDER BY display_order", (event_id,)
+                ).fetchall()
+            ]
+            event = dict(conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone())
 
-        conn.execute(
-            "UPDATE events SET message_id = ?, channel_id = ? WHERE id = ?",
-            (msg.id, msg.channel.id, event_id),
-        )
-        conn.commit()
-        conn.close()
+            embed = _build_embed(event, db_roles, {})
+            view = EventView(event_id, db_roles)
+            msg = await target_channel.send(embed=embed, view=view)
 
-        await interaction.followup.send(f"Event created! [Jump to event]({msg.jump_url})", ephemeral=True)
+            conn.execute(
+                "UPDATE events SET message_id = ?, channel_id = ? WHERE id = ?",
+                (msg.id, msg.channel.id, event_id),
+            )
+            conn.commit()
+            conn.close()
+
+            await interaction.followup.send(f"Event created! [Jump to event]({msg.jump_url})", ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
