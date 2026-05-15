@@ -158,6 +158,104 @@ class FormatSetupView(discord.ui.View):
         self.stop()
 
 
+class PingRoleSelectView(discord.ui.View):
+    """Ephemeral view shown after /ping to let the user pick which roles to mention."""
+
+    def __init__(self, embed: discord.Embed, target_channel: discord.TextChannel, source_channel_id: int):
+        super().__init__(timeout=120)
+        self.embed = embed
+        self.target_channel = target_channel
+        self.source_channel_id = source_channel_id
+        self.selected_role_ids: list[int] = []
+
+        # Build select options from ping_roles config; skip unconfigured (role_id == 0) entries
+        ping_roles = CONFIG.get("ping_roles", {})
+        options = []
+        for key, value in ping_roles.items():
+            role_id = value.get("role_id", 0)
+            if role_id and role_id != 0:
+                label = value.get("name", key)
+                if len(label) > 100:
+                    label = label[:97] + "..."
+                options.append(discord.SelectOption(label=label, value=str(role_id)))
+
+        if options:
+            self.role_select: discord.ui.Select | None = discord.ui.Select(
+                placeholder="Select roles to ping (leave blank for no mention)...",
+                min_values=0,
+                max_values=len(options),
+                options=options,
+                row=0,
+            )
+            self.role_select.callback = self._role_select_callback
+            self.add_item(self.role_select)
+        else:
+            self.role_select = None
+
+    async def _role_select_callback(self, interaction: discord.Interaction):
+        if self.role_select is not None:
+            self.selected_role_ids = [int(v) for v in self.role_select.values]
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Post Ping", style=discord.ButtonStyle.success, emoji="📣", row=1)
+    async def post_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+
+        # Resolve roles and temporarily make non-mentionable ones mentionable
+        mention_parts: list[str] = []
+        roles_to_reset: list[discord.Role] = []
+
+        for role_id in self.selected_role_ids:
+            if not interaction.guild:
+                continue
+            role = interaction.guild.get_role(role_id)
+            if not role:
+                continue  # Role was deleted or not found — skip silently
+            mention_parts.append(role.mention)
+            if not role.mentionable:
+                try:
+                    await role.edit(mentionable=True, reason="Pinging role via /ping command")
+                    roles_to_reset.append(role)
+                except discord.Forbidden:
+                    pass  # No permission to edit — still attempt the mention
+
+        mention_str = " ".join(mention_parts) if mention_parts else None
+
+        try:
+            await self.target_channel.send(content=mention_str, embed=self.embed)
+
+            # Reset mentionability for any roles we temporarily enabled
+            if roles_to_reset:
+                await asyncio.sleep(1)
+                for role in roles_to_reset:
+                    try:
+                        await role.edit(mentionable=False, reason="Resetting role mentionability after /ping")
+                    except discord.Forbidden:
+                        pass
+
+            if self.target_channel.id == self.source_channel_id:
+                await interaction.followup.send(
+                    "✅ Your ping has been posted in this channel.", ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"✅ Your post has been successfully published in {self.target_channel.mention}",
+                    ephemeral=True,
+                )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"❌ Error: I do not have permission to send messages in {self.target_channel.mention}.",
+                ephemeral=True,
+            )
+
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="✖️", row=1)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("❌ Ping cancelled.", ephemeral=True)
+        self.stop()
+
+
 class MessageEnforcer(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -179,7 +277,7 @@ class MessageEnforcer(commands.Cog):
                     mode_parameters TEXT
                 )
             """)
-            
+
             # Check for columns if table already existed (migration)
             cursor.execute("PRAGMA table_info(enforced_channels)")
             columns = [info[1] for info in cursor.fetchall()]
@@ -201,7 +299,7 @@ class MessageEnforcer(commands.Cog):
                     channel_id INTEGER NOT NULL
                 )
             """)
-            
+
             # New table for named user reminders
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS named_user_reminders (
@@ -304,8 +402,8 @@ class MessageEnforcer(commands.Cog):
                     ON CONFLICT(channel_id) DO UPDATE SET 
                         mode=excluded.mode, 
                         mode_parameters=excluded.mode_parameters
-                    """, 
-                    (channel_id, mode, parameters)
+                    """,
+                    (channel_id, mode, parameters),
                 )
             conn.commit()
 
@@ -419,11 +517,7 @@ class MessageEnforcer(commands.Cog):
                 f"Removed custom reminder for {user.mention}.", ephemeral=True
             )
         else:
-            p_msg = (
-                f" (Punishment: {p_type} for {punishment_value}s)"
-                if p_type != "none"
-                else ""
-            )
+            p_msg = f" (Punishment: {p_type} for {punishment_value}s)" if p_type != "none" else ""
             await interaction.response.send_message(
                 f"Custom reminder set for {user.mention}: {message}{p_msg}", ephemeral=True
             )
@@ -460,9 +554,7 @@ class MessageEnforcer(commands.Cog):
             "Please configure the allowed formats for this channel below:", view=view, ephemeral=True
         )
 
-    @app_commands.command(
-        name="set_ping_target", description="Set a default target channel for pings."
-    )
+    @app_commands.command(name="set_ping_target", description="Set a default target channel for pings.")
     @app_commands.check(has_staff_or_admin)
     async def set_ping_target(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Set a default target channel for pings."""
@@ -492,9 +584,7 @@ class MessageEnforcer(commands.Cog):
     async def scanz_subscriptions(self, interaction: discord.Interaction):
         """Post the role subscription message."""
         embed = discord.Embed(
-            title=CONFIG.get("messages", {}).get(
-                "subscription_title", "Ping Role Subscriptions"
-            ),
+            title=CONFIG.get("messages", {}).get("subscription_title", "Ping Role Subscriptions"),
             description=CONFIG.get("messages", {}).get(
                 "subscription_description", "Subscribe to pings here."
             ),
@@ -521,9 +611,7 @@ class MessageEnforcer(commands.Cog):
             try:
                 await message.author.send(reminder_text)
             except discord.Forbidden:
-                await message.channel.send(
-                    f"{message.author.mention}, {reminder_text}", delete_after=15
-                )
+                await message.channel.send(f"{message.author.mention}, {reminder_text}", delete_after=15)
 
             # Apply punishment
             if p_type == "timeout" and p_value > 0 and isinstance(message.author, discord.Member):
@@ -580,9 +668,7 @@ class MessageEnforcer(commands.Cog):
                 try:
                     await message.author.send(warning_text)
                 except discord.Forbidden:
-                    await message.channel.send(
-                        f"{message.author.mention}, {warning_text}", delete_after=10
-                    )
+                    await message.channel.send(f"{message.author.mention}, {warning_text}", delete_after=10)
 
                 # Log to admin channel
                 embed = discord.Embed(
@@ -680,66 +766,25 @@ class MessageEnforcer(commands.Cog):
         # Resolve the target channel
         target_channel = await self._resolve_target_channel(interaction, channel)
 
-        # Ping logic - retrieve configured role or fall back to name
-        def _get_scanz_role():
-            role_id = None
-            cog = self.bot.get_cog("RSIVerification")
-            if cog:
-                role_id = cog._get_config("scanz_role_id")
-            if role_id:
-                return interaction.guild.get_role(int(role_id))
-            # fallback to name
-            return discord.utils.get(interaction.guild.roles, name="SCANZ")
+        # Build the role-selection view and let the user choose which roles to ping
+        ping_roles = CONFIG.get("ping_roles", {})
+        has_configured_roles = any(v.get("role_id", 0) != 0 for v in ping_roles.values())
 
-        scanz_role = _get_scanz_role()
-        mention_str = ""
+        view = PingRoleSelectView(embed, target_channel, interaction.channel_id or 0)
 
-        if scanz_role:
-            mention_str = scanz_role.mention
-
-            # Track original mentionability so we only reset if WE changed it
-            was_mentionable = scanz_role.mentionable
-            if not was_mentionable:
-                try:
-                    await scanz_role.edit(
-                        mentionable=True, reason=f"Pinging {scanz_role.name} role via /ping command"
-                    )
-                except discord.Forbidden:
-                    pass  # Bot lacks permission to edit role
+        if has_configured_roles:
+            prompt = (
+                "**Select the roles you want to ping**, then click **Post Ping**.\n"
+                "Leave the dropdown untouched to post without any role mention."
+            )
         else:
-            await interaction.response.send_message(
-                "❌ Error: Could not find the SCANZ role in this server. Please contact an admin.",
-                ephemeral=True,
+            prompt = (
+                "⚠️ No ping roles are configured yet (all `role_id` values are `0` in "
+                "`enforcer_template.json`).\n\nClick **Post Ping** to post without a mention, "
+                "or **Cancel** to abort."
             )
-            return
 
-        # Send the embed to the target channel
-        try:
-            await target_channel.send(content=mention_str, embed=embed)
-
-            # Only reset mentionability if we were the one who enabled it
-            if scanz_role and not was_mentionable:
-                await asyncio.sleep(1)
-                try:
-                    await scanz_role.edit(mentionable=False, reason="Resetting @SCANZ mentionability")
-                except discord.Forbidden:
-                    pass
-
-            # Always send an ephemeral confirmation — never re-post the embed via interaction
-            if target_channel.id == interaction.channel_id:
-                await interaction.response.send_message(
-                    "✅ Your ping has been posted in this channel.", ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    f"✅ Your post has been successfully published in {target_channel.mention}",
-                    ephemeral=True,
-                )
-        except discord.errors.Forbidden:
-            await interaction.response.send_message(
-                f"❌ Error: I do not have permission to send messages in {target_channel.mention}.",
-                ephemeral=True,
-            )
+        await interaction.response.send_message(prompt, view=view, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

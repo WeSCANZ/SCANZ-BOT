@@ -35,7 +35,7 @@ This document lists all available slash commands for the SCANZ-BOT.
 
 | Command | Description | Permission |
 |---------|-------------|------------|
-| `/ping game_loop: description: [time:] [location:] [requirements:] [link:] [channel:]` | Create a formatted alert/ping. Automatically mentions `@SCANZ`. Posts to the configured ping channel or the specified `channel`. | Everyone |
+| `/ping game_loop: description: [time:] [location:] [requirements:] [link:] [channel:]` | Create a formatted alert/ping. After submitting, an ephemeral role-picker appears — select one or more ping roles (e.g. *Event Ping*, *General Ping*) to mention, or leave the dropdown untouched to post without any mention. Posts to the configured ping channel or the specified `channel`. Ping roles are configured in `enforcer_template.json`. | Everyone |
 | `/enforce_channel mode: [parameters:]` | Configure message enforcement for the current channel. Modes: `Strict`, `Warn Only`, `Timed Delete`, `Grace Period`. | Staff or Admin |
 | `/enforcer_user_reminder user: message: [punishment_type:] [punishment_value:]` | Set a custom reminder and optional punishment (e.g. timeout) for a specific user. | Staff or Admin |
 | `/scanz_format` | Interactive setup for a channel's allowed Game Loops. Posts an informational embed on save. Channel must be enforced first. | Staff or Admin |
