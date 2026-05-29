@@ -31,6 +31,22 @@ This document lists all available slash commands for the SCANZ-BOT.
 
 ---
 
+## Events
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/create_event` | Create a bot RSVP event and matching Discord scheduled event. | Event Manager or Admin |
+| `/edit_event event_id: [title:] [date_time:] [location:] [description:] [duration:] [image_url:]` | Edit the bot RSVP event and matching Discord scheduled event. `event_id` has autocomplete. | Event Manager or Admin |
+| `/cancel_event event_id:` | Cancel an active event and delete the matching Discord scheduled event. `event_id` has autocomplete. | Event Manager or Admin |
+| `/set_event_image event_id: image_url:` | Set the image on the bot RSVP embed. `event_id` has autocomplete. | Event Manager or Admin |
+| `/set_event_duration event_id: duration:` | Set the event duration and update the Discord scheduled event end time. `event_id` has autocomplete. | Event Manager or Admin |
+| `/set_events_channel channel:` | Set where bot RSVP event posts are sent. | Event Manager or Admin |
+| `/list_events` | List active events, including their event IDs. | Everyone |
+| `/set_event_manager_role role:` | Set the role that can manage event commands. | Admin only |
+| `/clear_event_manager_role` | Clear the event manager role and fall back to Staff or Admin. | Admin only |
+
+---
+
 ## Message Enforcer & Pings
 
 | Command | Description | Permission |
