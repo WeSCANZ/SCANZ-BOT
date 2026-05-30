@@ -52,3 +52,15 @@ Thumbs.db
 # Databases
 *.db
 data/
+
+# Project Directories
+AI Development/
+plans/
+
+# Workspace and Documentation
+*.code-workspace
+Org Management Automation.md
+SCANZ-BOT Collaboration & Security Protocols.md
+SCANZ-BOT Project Hub.md
+FUTURE_FEATURES.md
+DISCORD_TEST_PLAN.md
