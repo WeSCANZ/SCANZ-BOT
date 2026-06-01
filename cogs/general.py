@@ -10,6 +10,66 @@ from discord import app_commands
 from discord.ext import commands
 
 
+def parse_time_input(time_str: str, tz) -> datetime.datetime:
+    import re
+    time_str = time_str.strip().upper()
+    now_tz = datetime.datetime.now(tz)
+    
+    # Check for relative day
+    day_offset = 0
+    if "TOMORROW" in time_str:
+        day_offset = 1
+        time_str = time_str.replace("TOMORROW", "").strip()
+    elif "TODAY" in time_str:
+        time_str = time_str.replace("TODAY", "").strip()
+        
+    # Clean up multiple spaces
+    time_str = " ".join(time_str.split())
+    
+    # If string is empty after stripping today/tomorrow, or is "NOW"
+    if not time_str or time_str == "NOW":
+        return now_tz + datetime.timedelta(days=day_offset)
+        
+    # Try parsing date first: YYYY-MM-DD
+    date_match = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", time_str)
+    
+    target_date = now_tz.date() + datetime.timedelta(days=day_offset)
+    if date_match:
+        year, month, day = map(int, date_match.groups())
+        target_date = datetime.date(year, month, day)
+        # remove date from time_str
+        time_str = time_str.replace(date_match.group(0), "").strip()
+        
+    # Clean up again
+    time_str = " ".join(time_str.split())
+    
+    # Try different time formats
+    time_formats = [
+        "%I:%M %p",
+        "%I:%M%p",
+        "%H:%M",
+        "%I %p",
+        "%I%p",
+        "%H",
+    ]
+    
+    parsed_time = None
+    for fmt in time_formats:
+        try:
+            parsed_time = datetime.datetime.strptime(time_str, fmt).time()
+            break
+        except ValueError:
+            continue
+            
+    if parsed_time is None:
+        raise ValueError(f"Could not parse time format: `{time_str}`")
+        
+    # Combine date and time
+    dt = datetime.datetime.combine(target_date, parsed_time)
+    # Localize to timezone
+    return tz.localize(dt)
+
+
 class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -36,23 +96,103 @@ class General(commands.Cog):
         ]
         await interaction.response.send_message(random.choice(responses))
 
-    @app_commands.command(name="time", description="Displays current time across SCANZ timezones.")
-    async def time(self, interaction: discord.Interaction):
-        zones = {
-            "Indochina (ICT)": "Asia/Bangkok",
-            "Perth (AWST)": "Australia/Perth",
-            "Melbourne/Sydney (AET)": "Australia/Sydney",
-            "New Zealand (NZT)": "Pacific/Auckland",
+    @app_commands.command(name="time", description="Displays dynamic SCANZ times, or converts a future time across timezones.")
+    @app_commands.describe(
+        time_input="Optional: A future time to convert (e.g. '10:00 PM', 'tomorrow 3 PM', '2026-06-05 14:00').",
+        timezone="Optional: Timezone of the input time. Defaults to Melbourne/Sydney (AET).",
+    )
+    @app_commands.choices(
+        timezone=[
+            app_commands.Choice(name="Indochina (ICT)", value="ICT"),
+            app_commands.Choice(name="Perth (AWST)", value="AWST"),
+            app_commands.Choice(name="Melbourne/Sydney (AET)", value="AET"),
+            app_commands.Choice(name="New Zealand (NZT)", value="NZT"),
+        ]
+    )
+    async def time(
+        self,
+        interaction: discord.Interaction,
+        time_input: str | None = None,
+        timezone: str | None = None,
+    ):
+        timezone_map = {
+            "ICT": ("Asia/Bangkok", "🇹🇭 Indochina (ICT)"),
+            "AWST": ("Australia/Perth", "🇦🇺 Perth (AWST)"),
+            "AET": ("Australia/Sydney", "🇦🇺 Melbourne/Sydney (AET)"),
+            "NZT": ("Pacific/Auckland", "🇳🇿 New Zealand (NZT)"),
         }
+        zone_order = ["ICT", "AWST", "AET", "NZT"]
 
-        embed = discord.Embed(title="SCANZ Global Times", color=discord.Color.blurple())
+        # Default input timezone is AET (Melbourne/Sydney)
+        tz_key = timezone or "AET"
+        tz_iana, _ = timezone_map.get(tz_key, ("Australia/Sydney", "AET"))
+        tz = pytz.timezone(tz_iana)
 
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        # Parse input or use current time
+        try:
+            if time_input:
+                target_dt = parse_time_input(time_input, tz)
+            else:
+                target_dt = datetime.datetime.now(datetime.timezone.utc)
+        except ValueError as e:
+            await interaction.response.send_message(
+                f"❌ **Invalid Time Format:** {str(e)}\n"
+                "Try formats like: `10:00 PM`, `22:00`, `tomorrow 3 PM`, `2026-06-05 14:00`.",
+                ephemeral=True,
+            )
+            return
 
-        for name, tz_str in zones.items():
-            tz = pytz.timezone(tz_str)
-            local_time = now_utc.astimezone(tz)
-            embed.add_field(name=name, value=local_time.strftime("**%I:%M %p**\n%a, %b %d"), inline=True)
+        # Single Unix timestamp — Discord renders <t:ts:...> in the viewer's local timezone
+        ts = int(target_dt.timestamp())
+
+        # Build the embed
+        if time_input:
+            embed = discord.Embed(
+                title="🕐 SCANZ Time Converter",
+                description=(
+                    f"Conversion for **{time_input}** in {tz_key}:\n"
+                    f"▸ Your local time: <t:{ts}:F> (<t:{ts}:R>)"
+                ),
+                color=discord.Color.blurple(),
+            )
+        else:
+            embed = discord.Embed(
+                title="🕐 SCANZ Global Times",
+                description=(
+                    f"▸ Your local time: <t:{ts}:F>\n"
+                    f"▸ <t:{ts}:R>"
+                ),
+                color=discord.Color.blurple(),
+            )
+
+        # Add a field for each SCANZ timezone
+        for key in zone_order:
+            tz_iana_zone, label = timezone_map[key]
+            zone_tz = pytz.timezone(tz_iana_zone)
+            local_time = target_dt.astimezone(zone_tz)
+            embed.add_field(
+                name=label,
+                value=(
+                    f"<t:{ts}:t> · <t:{ts}:d>\n"
+                    f"*{local_time.strftime('%I:%M %p — %a, %b %d')}*"
+                ),
+                inline=True,
+            )
+
+        # Copyable Discord timestamp tags for scheduling/announcements
+        embed.add_field(
+            name="📋 Copyable Timestamps",
+            value=(
+                f"`<t:{ts}:F>` Full date & time\n"
+                f"`<t:{ts}:f>` Short date & time\n"
+                f"`<t:{ts}:t>` Time only\n"
+                f"`<t:{ts}:R>` Relative (e.g. *in 3 hours*)"
+            ),
+            inline=False,
+        )
+        embed.set_footer(
+            text="Paste any tag above into Discord — it shows each viewer's local time automatically."
+        )
 
         await interaction.response.send_message(embed=embed)
 

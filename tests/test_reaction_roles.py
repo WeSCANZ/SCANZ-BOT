@@ -36,6 +36,8 @@ def cog(tmp_path):
     touching the real 'data/' folder.
     """
     bot = MagicMock()
+    # Mock log_admin_action since it might be awaited in setup_reaction_role
+    bot.log_admin_action = AsyncMock()
     instance = ReactionRoles.__new__(ReactionRoles)
     instance.bot = bot
     instance.db_path = str(tmp_path / "reaction_roles.db")
