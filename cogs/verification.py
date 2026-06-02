@@ -14,6 +14,75 @@ from discord.ext import commands
 from utils.checks import has_staff_or_admin
 
 
+class VerifyHandleModal(discord.ui.Modal, title="RSI Verification"):
+    """Modal to collect the RSI handle when initiating verification from DM."""
+
+    handle = discord.ui.TextInput(
+        label="RSI Handle",
+        placeholder="Enter your exact RSI Handle...",
+        style=discord.TextStyle.short,
+        required=True,
+    )
+
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction):
+        handle_val = self.handle.value.strip()
+
+        orgs = self.cog._get_orgs()
+        if not orgs:
+            await interaction.response.send_message(
+                "❌ Verification is currently unavailable (no organisations configured). Please contact an admin.",
+                ephemeral=True,
+            )
+            return
+
+        chosen_org = orgs[0]
+
+        # Check if already verified
+        existing_handle = self.cog._is_verified(interaction.user.id, chosen_org)
+        if existing_handle:
+            await interaction.response.send_message(
+                f"You are already verified for {chosen_org} and linked to the RSI Handle **{existing_handle}**.",
+                ephemeral=True,
+            )
+            return
+
+        code = self.cog._generate_code(chosen_org)
+
+        embed = discord.Embed(
+            title="RSI Account Verification",
+            description=(
+                f"To securely link your Discord account to the RSI Handle **{handle_val}**, "
+                "please follow these steps:\n\n"
+                "1. Go to your [RSI Account Profile](https://robertsspaceindustries.com/account/profile).\n"
+                "2. Add the unique code below to the **END** of your **Short Bio**.\n"
+                "3. Click **'Apply All Changes'** at the bottom of the RSI page.\n"
+                "4. Click the **'Verify Now'** button below."
+            ),
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="Your Unique Code", value=f"`{code}`", inline=False)
+        embed.set_footer(text="You can remove the code from your bio once verification is successful.")
+
+        view = VerifyNowView(self.cog, handle_val, code, org=chosen_org)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class DMVerifyView(discord.ui.View):
+    """Initial view sent in DM to start the verification process."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Start Verification", style=discord.ButtonStyle.primary, emoji="🚀")
+    async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(VerifyHandleModal(self.cog))
+
+
 class VerifyNowView(discord.ui.View):
     def __init__(self, cog, handle: str, code: str, org: str | None = None):
         super().__init__(timeout=None)
@@ -1024,8 +1093,32 @@ class RSIVerification(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        """Assign unverified_role to new members who are not yet in the verification DB."""
+        """Assign unverified_role to new members who are not yet in the verification DB and DM them to verify."""
         await self.sync_member_roles(member)
+
+        # Don't DM bots
+        if member.bot:
+            return
+
+        # Check if already verified
+        existing_handle = self._is_verified(member.id)
+        if existing_handle:
+            return
+
+        # Send DM to start verification
+        try:
+            embed = discord.Embed(
+                title=f"Welcome to {member.guild.name}!",
+                description=(
+                    "To gain full access to the server, you need to verify your Star Citizen "
+                    "RSI account.\n\nClick the button below to start the verification process."
+                ),
+                color=discord.Color.blue(),
+            )
+            view = DMVerifyView(self)
+            await member.send(embed=embed, view=view)
+        except discord.Forbidden:
+            print(f"[Verification] Could not send DM to {member.name} (DMs disabled)")
 
     # configuration commands
     @app_commands.command(name="add_org", description="Add an RSI organisation/affiliate symbol")
